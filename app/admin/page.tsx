@@ -3,14 +3,26 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
+interface DonationRecord {
+  amount: number;
+  date: string;
+  method: string;
+  transactionId?: string;
+  senderPhone?: string;
+  status?: string;
+  receipt?: any;
+}
+
 interface UserData {
   name: string;
   email: string;
   phone: string;
+  address?: string;
   bloodGroup: string;
   totalDonation: number;
   donationCount: number;
   joinDate: string;
+  donations?: DonationRecord[];
 }
 
 interface PendingDonation {
@@ -20,18 +32,81 @@ interface PendingDonation {
   date: string;
   method: string;
   transactionId: string;
+  senderPhone?: string;
   donorBloodGroup: string;
+  donorEmail?: string;
   status?: string;
+}
+
+interface PendingUser {
+  name: string;
+  email: string;
+  phone: string;
+  address?: string;
+  bloodGroup: string;
+  registrationDate: string;
+  status: "pending" | "approved" | "rejected";
+}
+
+interface LedgerEntry {
+  id?: string;
+  timestamp?: number;
+  date: string;
+  donorName: string;
+  phone: string;
+  method: string;
+  type: "income" | "expense";
+  incomeAmount: number;
+  expenseAmount: number;
+  remarks: string;
+  isCustom?: boolean;
 }
 
 export default function AdminPanel() {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [adminUsername, setAdminUsername] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
-  const [passwordError, setPasswordError] = useState("");
+  const [loginError, setLoginError] = useState("");
   
   const [allUsers, setAllUsers] = useState<UserData[]>([]);
   const [pendingDonations, setPendingDonations] = useState<PendingDonation[]>([]);
+  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [activeTab, setActiveTab] = useState("users");
+  const [editingUser, setEditingUser] = useState<UserData | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editBloodGroup, setEditBloodGroup] = useState("");
+  const [manualDonationUser, setManualDonationUser] = useState<UserData | null>(null);
+  const [manualDonationAmount, setManualDonationAmount] = useState("");
+  const [manualDonationDate, setManualDonationDate] = useState("");
+  const [manualDonationMethod, setManualDonationMethod] = useState("নগদ");
+
+  // Manual Member Entry State
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserPhone, setNewUserPhone] = useState("");
+  const [newUserAddress, setNewUserAddress] = useState("");
+  const [newUserBloodGroup, setNewUserBloodGroup] = useState("");
+  const [newUserJoinDate, setNewUserJoinDate] = useState("");
+  const [addUserError, setAddUserError] = useState("");
+  
+  // Custom Ledger Modal state (আয়/ব্যয় এন্ট্রি)
+  const [showLedgerModal, setShowLedgerModal] = useState(false);
+  const [ledgerType, setLedgerType] = useState<"income" | "expense">("income");
+  const [ledgerName, setLedgerName] = useState("");
+  const [ledgerPhone, setLedgerPhone] = useState("");
+  const [ledgerMethod, setLedgerMethod] = useState("নগদ");
+  const [ledgerAmount, setLedgerAmount] = useState("");
+  const [ledgerDate, setLedgerDate] = useState("");
+  const [ledgerRemarks, setLedgerRemarks] = useState("");
+
+  // Donations filter state
+  const [allDonations, setAllDonations] = useState<LedgerEntry[]>([]);
+  const [filterYear, setFilterYear] = useState("");
+  const [filterMonth, setFilterMonth] = useState("");
+  const [filterDay, setFilterDay] = useState("");
+  
   const [totalStats, setTotalStats] = useState({
     totalUsers: 0,
     totalAmount: 0,
@@ -39,74 +114,915 @@ export default function AdminPanel() {
     pendingDonations: 0,
   });
 
-  const ADMIN_PASSWORD = "admin@123";
+  // Change Password & Auth State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState("");
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [loggedInAdminUser, setLoggedInAdminUser] = useState("");
+
+  // Password visibility states
+  const [showAdminLoginPassword, setShowAdminLoginPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const DEFAULT_ADMIN_ACCOUNTS = [
+    { username: "mdtarek48", password: "112233" },
+    { username: "admin", password: "123456" },
+    { username: "admin", password: "admin@123" },
+  ];
+
+  const getAdminAccounts = () => {
+    if (typeof window === "undefined") return DEFAULT_ADMIN_ACCOUNTS;
+    const saved = localStorage.getItem("adminAccounts");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        // Fallback to default
+      }
+    }
+    return DEFAULT_ADMIN_ACCOUNTS;
+  };
+
+  // Check admin login status on component mount
+  useEffect(() => {
+    const checkAdminLoginStatus = () => {
+      const savedAdminLoginStatus = localStorage.getItem("isAdminLoggedIn");
+      if (savedAdminLoginStatus === "true") {
+        setIsAdminLoggedIn(true);
+        const savedUser = localStorage.getItem("adminUsername") || "admin";
+        setLoggedInAdminUser(savedUser);
+        loadAllData();
+      }
+    };
+
+    checkAdminLoginStatus();
+
+    // Check URL parameters and custom events
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "all-donations") {
+        setActiveTab("all-donations");
+      }
+      if (params.get("openPasswordModal") === "true") {
+        setPasswordError("");
+        setPasswordSuccess("");
+        setCurrentPasswordInput("");
+        setNewPasswordInput("");
+        setConfirmPasswordInput("");
+        setShowPasswordModal(true);
+        // Clean up URL parameter
+        const newUrl = window.location.pathname + (params.get("tab") ? `?tab=${params.get("tab")}` : "");
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    }
+
+    const handleOpenPasswordModalEvent = () => {
+      setPasswordError("");
+      setPasswordSuccess("");
+      setCurrentPasswordInput("");
+      setNewPasswordInput("");
+      setConfirmPasswordInput("");
+      setShowPasswordModal(true);
+    };
+
+    window.addEventListener("openAdminPasswordModal", handleOpenPasswordModalEvent);
+
+    // Check admin login status when window gets focus
+    window.addEventListener("focus", checkAdminLoginStatus);
+    return () => {
+      window.removeEventListener("focus", checkAdminLoginStatus);
+      window.removeEventListener("openAdminPasswordModal", handleOpenPasswordModalEvent);
+    };
+  }, []);
 
   // Handle Admin Login
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setPasswordError("");
+    setLoginError("");
 
-    if (!adminPassword) {
-      setPasswordError("পাসওয়ার্ড দিন");
+    if (!adminUsername.trim()) {
+      setLoginError("ইউজার নেম দিন");
       return;
     }
 
-    if (adminPassword === ADMIN_PASSWORD) {
+    if (!adminPassword) {
+      setLoginError("পাসওয়ার্ড দিন");
+      return;
+    }
+
+    const inputUser = adminUsername.trim().toLowerCase();
+    const currentAccounts = getAdminAccounts();
+    const matchedAdmin = currentAccounts.find(
+      (acc: { username: string; password: string }) =>
+        acc.username.toLowerCase() === inputUser && acc.password === adminPassword
+    );
+
+    if (matchedAdmin) {
       setIsAdminLoggedIn(true);
+      setLoggedInAdminUser(matchedAdmin.username);
+      localStorage.setItem("isAdminLoggedIn", "true");
+      localStorage.setItem("adminUsername", matchedAdmin.username);
+      setAdminUsername("");
       setAdminPassword("");
       loadAllData();
     } else {
-      setPasswordError("পাসওয়ার্ড ভুল");
+      setLoginError("ইউজার নেম বা পাসওয়ার্ড ভুল");
     }
+  };
+
+  // Handle Password Change
+  const handlePasswordChange = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (!currentPasswordInput) {
+      setPasswordError("বর্তমান পাসওয়ার্ড দিন");
+      return;
+    }
+
+    if (!newPasswordInput) {
+      setPasswordError("নতুন পাসওয়ার্ড দিন");
+      return;
+    }
+
+    if (newPasswordInput.length < 4) {
+      setPasswordError("নতুন পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে");
+      return;
+    }
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setPasswordError("নতুন পাসওয়ার্ড এবং নিশ্চিতকরণ পাসওয়ার্ড মিলছে না");
+      return;
+    }
+
+    const currentAccounts = getAdminAccounts();
+    const activeUsername = loggedInAdminUser || localStorage.getItem("adminUsername") || "admin";
+    
+    let accountIndex = currentAccounts.findIndex(
+      (acc: { username: string; password: string }) => acc.username.toLowerCase() === activeUsername.toLowerCase()
+    );
+
+    if (accountIndex === -1) {
+      accountIndex = currentAccounts.findIndex(
+        (acc: { username: string; password: string }) => acc.password === currentPasswordInput
+      );
+    }
+
+    if (accountIndex !== -1) {
+      if (currentAccounts[accountIndex].password !== currentPasswordInput) {
+        setPasswordError("বর্তমান পাসওয়ার্ডটি সঠিক নয়");
+        return;
+      }
+      currentAccounts[accountIndex].password = newPasswordInput;
+    } else {
+      currentAccounts.push({ username: activeUsername, password: newPasswordInput });
+    }
+
+    localStorage.setItem("adminAccounts", JSON.stringify(currentAccounts));
+    
+    setPasswordSuccess("পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে!");
+    setTimeout(() => {
+      setShowPasswordModal(false);
+      setCurrentPasswordInput("");
+      setNewPasswordInput("");
+      setConfirmPasswordInput("");
+      setPasswordSuccess("");
+    }, 1500);
+  };
+
+  // Handle Admin Logout
+  const handleAdminLogout = () => {
+    if (window.confirm("আপনি কি এডমিন প্যানেল থেকে লগআউট করতে চান?")) {
+      localStorage.removeItem("isAdminLoggedIn");
+      localStorage.removeItem("adminUsername");
+      setIsAdminLoggedIn(false);
+      setLoggedInAdminUser("");
+    }
+  };
+
+  // Helper to parse Bengali date string or ID to numeric timestamp for accurate sorting
+  const parseBengaliDateToTimestamp = (dateStr?: string, id?: string): number => {
+    if (id) {
+      const match = id.match(/\d{10,}/);
+      if (match) return Number(match[0]);
+    }
+    if (!dateStr) return 0;
+
+    const banglaDigits: Record<string, string> = {
+      '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4',
+      '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9'
+    };
+    let englishStr = dateStr.replace(/[০-৯]/g, (w) => banglaDigits[w]);
+
+    const monthsMap: Record<string, string> = {
+      'জানুয়ারি': 'January', 'জানুয়ারী': 'January',
+      'ফেব্রুয়ারি': 'February', 'ফেব্রুয়ারী': 'February',
+      'মার্চ': 'March',
+      'এপ্রিল': 'April',
+      'মে': 'May',
+      'জুন': 'June',
+      'জুলাই': 'July',
+      'আগস্ট': 'August',
+      'সেপ্টেম্বর': 'September',
+      'অক্টোবর': 'October',
+      'নভেম্বর': 'November',
+      'ডিসেম্বর': 'December'
+    };
+
+    Object.entries(monthsMap).forEach(([bn, en]) => {
+      englishStr = englishStr.replace(bn, en);
+    });
+
+    const parsed = new Date(englishStr).getTime();
+    return isNaN(parsed) ? 0 : parsed;
   };
 
   // Load all data from localStorage
   const loadAllData = () => {
-    // Load all users
-    const users = JSON.parse(localStorage.getItem("allUsers") || "[]");
-    setAllUsers(users);
+    // Load all users from allUsers
+    let allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
+    const pendingUsersList: PendingUser[] = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
+    const savedUserStr = localStorage.getItem("userData");
+    const savedUserObj = savedUserStr ? JSON.parse(savedUserStr) : null;
+    
+    // Deduplicate users safely and sync missing address
+    const uniqueUsers: UserData[] = Array.from(
+      new Map(
+        allUsersData.map((user: UserData, idx: number) => {
+          let userAddr = user.address && user.address !== "-" ? user.address : "";
+          if (!userAddr) {
+            const matchPending = pendingUsersList.find(p => (p.phone && p.phone === user.phone) || (p.email && p.email === user.email));
+            if (matchPending && matchPending.address) {
+              userAddr = matchPending.address;
+            } else if (savedUserObj && (savedUserObj.phone === user.phone || savedUserObj.email === user.email) && savedUserObj.address) {
+              userAddr = savedUserObj.address;
+            }
+          }
+          const updatedUser: UserData = { ...user, address: userAddr || "-" };
+          const key = (user.phone && user.phone !== "-") 
+            ? user.phone 
+            : ((user.email && user.email !== "-") 
+                ? user.email 
+                : `user-${idx}-${user.name}`);
+          return [key, updatedUser];
+        })
+      ).values()
+    ) as UserData[];
+    
+    setAllUsers(uniqueUsers);
 
     // Load pending donations
-    const pending = JSON.parse(localStorage.getItem("pendingDonations") || "[]");
-    setPendingDonations(pending);
+    const pendingDonationsData = JSON.parse(localStorage.getItem("pendingDonations") || "[]");
+    setPendingDonations(pendingDonationsData);
 
-    // Calculate stats
-    const totalAmount = users.reduce((sum: number, user: UserData) => sum + (user.totalDonation || 0), 0);
-    const totalDonationCount = users.reduce((sum: number, user: UserData) => sum + (user.donationCount || 0), 0);
-    const pendingAmount = pending.length;
+    setPendingUsers(pendingUsersList);
+
+    // Collect ONLY APPROVED donations & ledger entries (Income & Expense)
+    const combinedLedger: LedgerEntry[] = [];
+    const processedIds = new Set<string>();
+
+    // 1. Custom entries (Custom Income & Expense added by admin or approved from pending)
+    const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+    customEntries.forEach((ce: any) => {
+      let cleanRemarks = ce.remarks || "-";
+      if (typeof cleanRemarks === "string") {
+        cleanRemarks = cleanRemarks.replace(/\s*\(TrxID:.*?\)/gi, "").trim();
+      }
+
+      const entryId = ce.id || `custom-${ce.donorName}-${ce.date}-${ce.incomeAmount || ce.expenseAmount}`;
+      if (!processedIds.has(entryId)) {
+        processedIds.add(entryId);
+        if (ce.transactionId) processedIds.add(ce.transactionId);
+        combinedLedger.push({
+          id: entryId,
+          timestamp: ce.timestamp || parseBengaliDateToTimestamp(ce.date, entryId),
+          date: ce.date || "",
+          donorName: ce.donorName || "-",
+          phone: ce.phone || "-",
+          method: ce.method || "-",
+          type: ce.type || (ce.expenseAmount > 0 ? "expense" : "income"),
+          incomeAmount: Number(ce.incomeAmount) || 0,
+          expenseAmount: Number(ce.expenseAmount) || 0,
+          remarks: cleanRemarks || "অনুমোদিত দান",
+          isCustom: true,
+        });
+      }
+    });
+
+    // 2. Approved User donations from allUsers & userData
+    const allUsersToScan = [...uniqueUsers];
+    if (savedUserObj && !allUsersToScan.some(u => (u.phone && u.phone === savedUserObj.phone) || (u.email && u.email !== "-" && u.email === savedUserObj.email))) {
+      allUsersToScan.push(savedUserObj);
+    }
+
+    allUsersToScan.forEach((user: UserData) => {
+      if (user.donations && Array.isArray(user.donations)) {
+        user.donations.forEach((donation: DonationRecord) => {
+          if (donation.status === "approved") {
+            const txId = donation.transactionId || `approved-${user.phone || user.name}-${donation.date}-${donation.amount}`;
+            const ledgerId = `ledger-appr-${txId}`;
+            if (!processedIds.has(txId) && !processedIds.has(ledgerId)) {
+              processedIds.add(txId);
+              processedIds.add(ledgerId);
+              combinedLedger.push({
+                id: txId,
+                timestamp: (donation as any).timestamp || parseBengaliDateToTimestamp(donation.date, txId),
+                date: donation.date || "",
+                donorName: user.name || "অজানা",
+                phone: user.phone || "-",
+                method: donation.method || "অন্যান্য",
+                type: "income",
+                incomeAmount: Number(donation.amount) || 0,
+                expenseAmount: 0,
+                remarks: "অনুমোদিত দান",
+                isCustom: false,
+              });
+            }
+          }
+        });
+      }
+    });
+
+    // Sort by timestamp & date (newest entries always first at the top)
+    combinedLedger.sort((a, b) => {
+      const timeA = a.timestamp || parseBengaliDateToTimestamp(a.date, a.id);
+      const timeB = b.timestamp || parseBengaliDateToTimestamp(b.date, b.id);
+      return timeB - timeA;
+    });
+
+    setAllDonations(combinedLedger);
+
+    // Calculate total stats from combined ledger
+    const computedTotalIncome = combinedLedger
+      .filter(item => item.type === "income")
+      .reduce((sum, item) => sum + item.incomeAmount, 0);
+
+    const computedTotalDonations = combinedLedger
+      .filter(item => item.type === "income").length;
 
     setTotalStats({
-      totalUsers: users.length,
-      totalAmount: totalAmount,
-      totalDonations: totalDonationCount,
-      pendingDonations: pendingAmount,
+      totalUsers: uniqueUsers.length,
+      totalAmount: computedTotalIncome,
+      totalDonations: computedTotalDonations,
+      pendingDonations: pendingDonationsData.length,
     });
   };
 
-  // Delete user
-  const deleteUser = (phone: string) => {
-    if (window.confirm("এই ব্যবহারকারী মুছে দিতে চান?")) {
-      const updatedUsers = allUsers.filter(user => user.phone !== phone);
-      localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
-      setAllUsers(updatedUsers);
-      setTotalStats({
-        ...totalStats,
-        totalUsers: updatedUsers.length,
+  // Save custom income/expense ledger entry
+  const saveCustomLedgerEntry = () => {
+    if (!ledgerName.trim()) {
+      alert("দাতার নাম বা বিবরণ দিন");
+      return;
+    }
+
+    if (!ledgerAmount || Number(ledgerAmount) <= 0) {
+      alert("সঠিক টাকা পরিমাণ দিন");
+      return;
+    }
+
+    const amountNum = Number(ledgerAmount);
+    let dateStr = "";
+    if (ledgerDate) {
+      const dateObj = new Date(ledgerDate);
+      dateStr = dateObj.toLocaleDateString('bn-BD', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
+    } else {
+      dateStr = new Date().toLocaleDateString('bn-BD', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
       });
     }
+
+    const newEntry = {
+      id: "custom-" + Date.now(),
+      timestamp: Date.now(),
+      date: dateStr,
+      donorName: ledgerName.trim(),
+      phone: ledgerPhone.trim() || "-",
+      method: ledgerMethod,
+      type: ledgerType,
+      incomeAmount: ledgerType === "income" ? amountNum : 0,
+      expenseAmount: ledgerType === "expense" ? amountNum : 0,
+      remarks: ledgerRemarks.trim() || (ledgerType === "income" ? "ম্যানুয়াল আয়" : "ম্যানুয়াল ব্যয়"),
+      isCustom: true,
+    };
+
+    const existing = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+    existing.push(newEntry);
+    localStorage.setItem("customLedgerEntries", JSON.stringify(existing));
+
+    setShowLedgerModal(false);
+    setLedgerName("");
+    setLedgerPhone("");
+    setLedgerAmount("");
+    setLedgerDate("");
+    setLedgerRemarks("");
+    loadAllData();
+    alert("আয়/ব্যয় হিসাব এন্ট্রি সফলভাবে সংরক্ষণ করা হয়েছে");
+  };
+
+  // Delete custom ledger entry
+  const deleteCustomLedgerEntry = (id?: string) => {
+    if (!id) return;
+    if (window.confirm("এই আয়/ব্যয় এন্ট্রিটি মুছে ফেলতে চান?")) {
+      const existing = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+      const updated = existing.filter((item: any) => item.id !== id);
+      localStorage.setItem("customLedgerEntries", JSON.stringify(updated));
+      loadAllData();
+    }
+  };
+
+  // Approve pending user
+  const approvePendingUser = (email: string) => {
+    if (window.confirm("এই ব্যবহারকারীকে অনুমোদন করতে চান?")) {
+      const pendingUser = pendingUsers.find(u => u.email === email);
+      if (!pendingUser) return;
+
+      const allUsersData = JSON.parse(localStorage.getItem("allUsers") || "[]");
+      
+      const approvedUser = {
+        name: pendingUser.name,
+        email: pendingUser.email,
+        phone: pendingUser.phone,
+        address: pendingUser.address || "-",
+        bloodGroup: pendingUser.bloodGroup,
+        joinDate: pendingUser.registrationDate,
+        totalDonation: 0,
+        donationCount: 0,
+        donations: [],
+      };
+      allUsersData.push(approvedUser);
+      localStorage.setItem("allUsers", JSON.stringify(allUsersData));
+      setAllUsers(allUsersData);
+
+      const updatedPendingUsers: PendingUser[] = pendingUsers.map(u =>
+        u.email === email ? { ...u, status: "approved" as const } : u
+      );
+      localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
+      setPendingUsers(updatedPendingUsers);
+
+      alert("ব্যবহারকারী অনুমোদিত হয়েছে। এখন তিনি লগইন করতে পারবেন।");
+      loadAllData();
+    }
+  };
+
+  // Reject pending user
+  const rejectPendingUser = (email: string) => {
+    if (window.confirm("এই ব্যবহারকারীকে বাতিল করতে চান?")) {
+      const updatedPendingUsers: PendingUser[] = pendingUsers.map(u =>
+        u.email === email ? { ...u, status: "rejected" as const } : u
+      );
+      localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
+      setPendingUsers(updatedPendingUsers);
+
+      alert("ব্যবহারকারী বাতিল করা হয়েছে");
+    }
+  };
+
+  // Delete user
+  const deleteUser = (userKey: string) => {
+    if (window.confirm("আপনি কি এই সদস্যের তথ্য মুছে ফেলতে চান?")) {
+      const updatedUsers = allUsers.filter(user => user.phone !== userKey && user.email !== userKey && user.name !== userKey);
+      localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
+      setAllUsers(updatedUsers);
+      loadAllData();
+      alert("সদস্য রিমুভ করা হয়েছে");
+    }
+  };
+
+  // Add Member Manually Handler
+  const handleAddUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddUserError("");
+
+    if (!newUserName.trim()) {
+      setAddUserError("সদস্যের নাম আবশ্যক");
+      return;
+    }
+    if (!newUserPhone.trim()) {
+      setAddUserError("মোবাইল নাম্বার আবশ্যক");
+      return;
+    }
+
+    const currentUsers: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
+    
+    // Check if phone already exists
+    const exists = currentUsers.some(
+      u => u.phone && u.phone !== "-" && u.phone === newUserPhone.trim()
+    );
+
+    if (exists) {
+      setAddUserError("এই মোবাইল নাম্বারে ইতিমধ্যে একজন সদস্য অন্তর্ভুক্ত রয়েছেন");
+      return;
+    }
+
+    let formattedJoinDate = "";
+    if (newUserJoinDate.trim()) {
+      const d = new Date(newUserJoinDate.trim());
+      if (!isNaN(d.getTime())) {
+        formattedJoinDate = d.toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
+      } else {
+        formattedJoinDate = newUserJoinDate.trim();
+      }
+    } else {
+      formattedJoinDate = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    const newMember: UserData = {
+      name: newUserName.trim(),
+      email: "-",
+      phone: newUserPhone.trim(),
+      address: newUserAddress.trim() || "-",
+      bloodGroup: newUserBloodGroup || "-",
+      totalDonation: 0,
+      donationCount: 0,
+      joinDate: formattedJoinDate,
+      donations: []
+    };
+
+    currentUsers.push(newMember);
+    localStorage.setItem("allUsers", JSON.stringify(currentUsers));
+    
+    // Reset form and close modal
+    setNewUserName("");
+    setNewUserPhone("");
+    setNewUserAddress("");
+    setNewUserBloodGroup("");
+    setNewUserJoinDate("");
+    setShowAddUserModal(false);
+
+    loadAllData();
+    alert("নতুন সদস্য ম্যানুয়ালি সফলভাবে যুক্ত করা হয়েছে!");
   };
 
   // Delete pending donation
   const deletePendingDonation = (index: number) => {
-    if (window.confirm("এই দান মুছে দিতে চান?")) {
-      const updatedPending = pendingDonations.filter((_, i) => i !== index);
-      localStorage.setItem("pendingDonations", JSON.stringify(updatedPending));
-      setPendingDonations(updatedPending);
-      setTotalStats({
-        ...totalStats,
-        pendingDonations: updatedPending.length,
-      });
+    const updatedPending = pendingDonations.filter((_, i) => i !== index);
+    localStorage.setItem("pendingDonations", JSON.stringify(updatedPending));
+    setPendingDonations(updatedPending);
+    setTotalStats({
+      ...totalStats,
+      pendingDonations: updatedPending.length,
+    });
+  };
+
+  // Approve pending donation
+  const approvePendingDonation = (index: number) => {
+    if (window.confirm("এই দান অনুমোদন করতে চান?")) {
+      const donation = pendingDonations[index];
+      if (!donation) return;
+      
+      const receiptNumber = `REC-${Date.now()}`;
+      const receipt = {
+        receiptNumber: receiptNumber,
+        donorName: donation.donorName || "অনলাইন দাতা",
+        amount: Number(donation.amount) || 0,
+        paymentMethod: donation.method || "অনলাইন",
+        transactionId: donation.transactionId || "",
+        senderPhone: donation.senderPhone || "",
+        date: donation.date || new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' }),
+      };
+
+      const donationAmount = Number(donation.amount) || 0;
+      const txId = donation.transactionId || `tx-${Date.now()}`;
+      const ledgerEntryId = `ledger-appr-${txId}`;
+
+      // 1. Update in allUsersData
+      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
+      const userIndex = allUsersData.findIndex((u: UserData) => 
+        (donation.donorPhone && donation.donorPhone !== "-" && u.phone === donation.donorPhone) ||
+        (donation.donorName && donation.donorName !== "অজানা" && donation.donorName !== "বেনামী" && u.name === donation.donorName)
+      );
+      
+      if (userIndex !== -1) {
+        if (!allUsersData[userIndex].donations) {
+          allUsersData[userIndex].donations = [];
+        }
+
+        const existingDonationIndex = allUsersData[userIndex].donations!.findIndex((d: any) => 
+          (d.transactionId && donation.transactionId && d.transactionId === donation.transactionId) ||
+          (Number(d.amount) === donationAmount && d.date === donation.date && d.status === "pending")
+        );
+
+        if (existingDonationIndex !== -1) {
+          allUsersData[userIndex].donations![existingDonationIndex].status = "approved";
+          allUsersData[userIndex].donations![existingDonationIndex].receipt = receipt;
+        } else {
+          allUsersData[userIndex].donations!.push({
+            amount: donationAmount,
+            date: donation.date,
+            method: donation.method,
+            transactionId: txId,
+            senderPhone: donation.senderPhone,
+            status: "approved",
+            receipt: receipt,
+          });
+        }
+
+        const approvedDons = allUsersData[userIndex].donations!.filter(d => d.status === "approved");
+        allUsersData[userIndex].totalDonation = approvedDons.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+        allUsersData[userIndex].donationCount = approvedDons.length;
+      } else {
+        allUsersData.push({
+          name: donation.donorName || "অনলাইন দাতা",
+          email: donation.donorEmail || "",
+          phone: donation.donorPhone || donation.senderPhone || "-",
+          bloodGroup: donation.donorBloodGroup || "",
+          totalDonation: donationAmount,
+          donationCount: 1,
+          joinDate: donation.date,
+          donations: [{
+            amount: donationAmount,
+            date: donation.date,
+            method: donation.method,
+            transactionId: txId,
+            senderPhone: donation.senderPhone,
+            status: "approved",
+            receipt: receipt,
+          }],
+        });
+      }
+      
+      localStorage.setItem("allUsers", JSON.stringify(allUsersData));
+      setAllUsers(allUsersData);
+      
+      // 2. Update currently logged-in user in userData if matching
+      const savedUser = localStorage.getItem("userData");
+      if (savedUser) {
+        const userData = JSON.parse(savedUser);
+        if (
+          (donation.donorPhone && donation.donorPhone !== "-" && userData.phone === donation.donorPhone) ||
+          (donation.donorName && donation.donorName !== "অজানা" && donation.donorName !== "বেনামী" && userData.name === donation.donorName)
+        ) {
+          if (!userData.donations) userData.donations = [];
+          const donationIndex = userData.donations.findIndex((d: any) => 
+            (d.transactionId && donation.transactionId && d.transactionId === donation.transactionId) ||
+            (Number(d.amount) === donationAmount && d.date === donation.date && d.status === "pending")
+          );
+          if (donationIndex !== -1) {
+            userData.donations[donationIndex].status = "approved";
+            userData.donations[donationIndex].receipt = receipt;
+          } else {
+            userData.donations.push({
+              amount: donationAmount,
+              date: donation.date,
+              method: donation.method,
+              transactionId: txId,
+              senderPhone: donation.senderPhone,
+              status: "approved",
+              receipt: receipt,
+            });
+          }
+
+          const userApprovedDons = userData.donations.filter((d: any) => d.status === "approved");
+          userData.totalDonation = userApprovedDons.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
+          userData.donationCount = userApprovedDons.length;
+          localStorage.setItem("userData", JSON.stringify(userData));
+        }
+      }
+      
+      // 3. Save entry directly to customLedgerEntries to guarantee it appears in Admin Ledger & Total Calculations
+      const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+      const existsInCustom = customEntries.some((ce: any) => ce.id === ledgerEntryId || (ce.transactionId && ce.transactionId === txId));
+      if (!existsInCustom) {
+        customEntries.push({
+          id: ledgerEntryId,
+          transactionId: txId,
+          timestamp: Date.now(),
+          date: donation.date || new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' }),
+          donorName: donation.donorName || "অনলাইন দাতা",
+          phone: donation.donorPhone || donation.senderPhone || "-",
+          method: donation.method || "অনলাইন",
+          type: "income",
+          incomeAmount: donationAmount,
+          expenseAmount: 0,
+          remarks: "অনুমোদিত দান",
+          isCustom: true,
+        });
+        localStorage.setItem("customLedgerEntries", JSON.stringify(customEntries));
+      }
+
+      // 4. Remove from pendingDonations
+      deletePendingDonation(index);
+      
+      // 5. Reload all data and stats immediately
+      loadAllData();
+      
+      alert("দানটি সফলভাবে অনুমোদিত হয়েছে এবং 'দানের হিসাব (লেজার)'-এ অটোমেটিক যুক্ত হয়েছে।");
     }
+  };
+
+  // Reject pending donation
+  const rejectPendingDonation = (index: number) => {
+    if (window.confirm("এই দান বাতিল করতে চান?")) {
+      const donation = pendingDonations[index];
+      if (!donation) return;
+
+      const donationAmount = Number(donation.amount) || 0;
+      const txId = donation.transactionId || "";
+      const ledgerEntryId = `ledger-appr-${txId}`;
+
+      // 1. Remove from customLedgerEntries if present
+      if (txId || ledgerEntryId) {
+        const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+        const filteredCustom = customEntries.filter((ce: any) => ce.id !== ledgerEntryId && (!txId || ce.transactionId !== txId));
+        localStorage.setItem("customLedgerEntries", JSON.stringify(filteredCustom));
+      }
+
+      // 2. Update in allUsersData
+      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
+      const userIndex = allUsersData.findIndex((u: UserData) => 
+        (donation.donorPhone && donation.donorPhone !== "-" && u.phone === donation.donorPhone) ||
+        (donation.donorName && donation.donorName !== "অজানা" && donation.donorName !== "বেনামী" && u.name === donation.donorName)
+      );
+
+      if (userIndex !== -1 && allUsersData[userIndex].donations) {
+        const donationIndex = allUsersData[userIndex].donations!.findIndex((d: any) => 
+          (d.transactionId && txId && d.transactionId === txId) ||
+          (Number(d.amount) === donationAmount && d.date === donation.date && d.status === "pending")
+        );
+        if (donationIndex !== -1) {
+          allUsersData[userIndex].donations![donationIndex].status = "rejected";
+        }
+        const approvedDons = allUsersData[userIndex].donations!.filter(d => d.status === "approved");
+        allUsersData[userIndex].totalDonation = approvedDons.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+        allUsersData[userIndex].donationCount = approvedDons.length;
+
+        localStorage.setItem("allUsers", JSON.stringify(allUsersData));
+        setAllUsers(allUsersData);
+      }
+      
+      // 3. Update currently logged-in user if matches
+      const savedUser = localStorage.getItem("userData");
+      if (savedUser) {
+        const userData = JSON.parse(savedUser);
+        if (
+          (donation.donorPhone && donation.donorPhone !== "-" && userData.phone === donation.donorPhone) ||
+          (donation.donorName && donation.donorName !== "অজানা" && donation.donorName !== "বেনামী" && userData.name === donation.donorName)
+        ) {
+          if (userData.donations && Array.isArray(userData.donations)) {
+            const donationIndex = userData.donations.findIndex((d: any) => 
+              (d.transactionId && txId && d.transactionId === txId) ||
+              (Number(d.amount) === donationAmount && d.date === donation.date && d.status === "pending")
+            );
+            if (donationIndex !== -1) {
+              userData.donations[donationIndex].status = "rejected";
+            }
+            const userApprovedDons = userData.donations.filter((d: any) => d.status === "approved");
+            userData.totalDonation = userApprovedDons.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
+            userData.donationCount = userApprovedDons.length;
+            localStorage.setItem("userData", JSON.stringify(userData));
+          }
+        }
+      }
+      
+      // 4. Remove from pendingDonations
+      deletePendingDonation(index);
+
+      // 5. Reload all data and stats immediately
+      loadAllData();
+
+      alert("দানটি বাতিল করা হয়েছে এবং এটি দানের হিসাবে যুক্ত হয়নি।");
+    }
+  };
+
+  // Open manual donation modal
+  const openManualDonationModal = (user: UserData) => {
+    setManualDonationUser(user);
+    setManualDonationAmount("");
+    setManualDonationDate(new Date().toISOString().split('T')[0]);
+    setManualDonationMethod("নগদ");
+  };
+
+  // Close manual donation modal
+  const closeManualDonationModal = () => {
+    setManualDonationUser(null);
+    setManualDonationAmount("");
+    setManualDonationDate("");
+    setManualDonationMethod("নগদ");
+  };
+
+  // Save manual donation
+  const saveManualDonation = () => {
+    if (!manualDonationUser) return;
+
+    if (!manualDonationAmount || Number(manualDonationAmount) <= 0) {
+      alert("সঠিক দান পরিমাণ দিন");
+      return;
+    }
+
+    if (!manualDonationDate) {
+      alert("তারিখ দিন");
+      return;
+    }
+
+    const amount = Number(manualDonationAmount);
+    const dateObj = new Date(manualDonationDate);
+    const banglaDate = dateObj.toLocaleDateString('bn-BD', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const newDonationObj = {
+      amount: amount,
+      date: banglaDate,
+      method: manualDonationMethod,
+      transactionId: "MANUAL-" + Date.now(),
+      status: "approved"
+    };
+
+    const updatedUsers = allUsers.map(user => {
+      if (user.phone === manualDonationUser.phone || user.name === manualDonationUser.name) {
+        const existingDonations = user.donations || [];
+        return {
+          ...user,
+          totalDonation: (user.totalDonation || 0) + amount,
+          donationCount: (user.donationCount || 0) + 1,
+          donations: [newDonationObj, ...existingDonations],
+        };
+      }
+      return user;
+    });
+
+    localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
+    setAllUsers(updatedUsers);
+
+    const savedUser = localStorage.getItem("userData");
+    if (savedUser) {
+      const userData = JSON.parse(savedUser);
+      if (userData.phone === manualDonationUser.phone || userData.name === manualDonationUser.name) {
+        userData.donations = [newDonationObj, ...(userData.donations || [])];
+        userData.totalDonation = (userData.totalDonation || 0) + amount;
+        userData.donationCount = (userData.donationCount || 0) + 1;
+        localStorage.setItem("userData", JSON.stringify(userData));
+      }
+    }
+
+    closeManualDonationModal();
+    loadAllData();
+    alert("ম্যানুয়াল দান সংরক্ষণ করা হয়েছে এবং 'দানের হিসাব'-এ যোগ হয়েছে");
+  };
+
+  // Open edit modal
+  const openEditModal = (user: UserData) => {
+    setEditingUser(user);
+    setEditName(user.name);
+    setEditPhone(user.phone);
+    setEditAddress(user.address || "");
+    setEditBloodGroup(user.bloodGroup);
+  };
+
+  // Close edit modal
+  const closeEditModal = () => {
+    setEditingUser(null);
+    setEditName("");
+    setEditPhone("");
+    setEditAddress("");
+    setEditBloodGroup("");
+  };
+
+  // Save edited user
+  const saveEditedUser = () => {
+    if (!editingUser) return;
+
+    if (!editName.trim()) {
+      alert("নাম দিন");
+      return;
+    }
+
+    if (!editPhone.trim()) {
+      alert("মোবাইল নম্বর দিন");
+      return;
+    }
+
+    const updatedUsers = allUsers.map(user =>
+      (user.phone === editingUser.phone || user.email === editingUser.email)
+        ? {
+            ...user,
+            name: editName,
+            phone: editPhone,
+            address: editAddress,
+            bloodGroup: editBloodGroup,
+          }
+        : user
+    );
+
+    localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
+    setAllUsers(updatedUsers);
+    closeEditModal();
+    alert("সদস্য তথ্য আপডেট করা হয়েছে");
   };
 
   // Clear all data
@@ -127,12 +1043,265 @@ export default function AdminPanel() {
     }
   };
 
-  // Logout
-  const handleLogout = () => {
-    setIsAdminLoggedIn(false);
-    setAdminPassword("");
-    setAllUsers([]);
-    setPendingDonations([]);
+  // Export donations ledger to Excel (CSV with UTF-8 BOM for Excel Bengali font support)
+  const downloadExcel = () => {
+    if (allDonations.length === 0) {
+      alert("ডাউনলোড করার মতো কোনো হিসাব পাওয়া যায়নি");
+      return;
+    }
+
+    const filteredLedger = allDonations.filter((item) => {
+      if (!item.date) return true;
+      const dateStr = item.date;
+      const numbers = dateStr.match(/\d+/g) || [];
+      const day = numbers[0] || '';
+      const year = numbers[1] || '';
+      
+      if (filterYear && year !== filterYear) return false;
+      if (filterDay && day !== filterDay) return false;
+      
+      if (filterMonth) {
+        const months: Record<string, string[]> = {
+          'January': ['January', 'জানুয়ারি'],
+          'February': ['February', 'ফেব্রুয়ারি'],
+          'March': ['March', 'মার্চ'],
+          'April': ['April', 'এপ্রিল'],
+          'May': ['May', 'মে'],
+          'June': ['June', 'জুন'],
+          'July': ['July', 'জুলাই'],
+          'August': ['August', 'আগস্ট'],
+          'September': ['September', 'সেপ্টেম্বর'],
+          'October': ['October', 'অক্টোবর'],
+          'November': ['November', 'নভেম্বর'],
+          'December': ['December', 'ডিসেম্বর']
+        };
+        if (!months[filterMonth]?.some((m: string) => dateStr.includes(m))) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (filteredLedger.length === 0) {
+      alert("নির্বাচিত ফিল্টারে কোনো হিসাব পাওয়া যায়নি");
+      return;
+    }
+
+    const headers = ["তারিখ", "দাতার নাম / বিবরণ", "মোবাইল নাম্বার", "পেমেন্ট পদ্ধতি", "আয় (৳)", "ব্যয় (৳)", "রিমার্কস"];
+
+    let totalInc = 0;
+    let totalExp = 0;
+
+    const rows = filteredLedger.map((item) => {
+      const inc = item.incomeAmount || 0;
+      const exp = item.expenseAmount || 0;
+      totalInc += inc;
+      totalExp += exp;
+
+      const date = `"${(item.date || "").replace(/"/g, '""')}"`;
+      const name = `"${(item.donorName || "").replace(/"/g, '""')}"`;
+      const phone = `"${(item.phone || "-").replace(/"/g, '""')}"`;
+      const method = `"${(item.method || "-").replace(/"/g, '""')}"`;
+      const remarks = `"${(item.remarks || "-").replace(/"/g, '""')}"`;
+
+      return [date, name, phone, method, inc > 0 ? inc : 0, exp > 0 ? exp : 0, remarks].join(",");
+    });
+
+    const netBal = totalInc - totalExp;
+    const totalsRow = [
+      '"সর্বমোট হিসাব"',
+      '""',
+      '""',
+      '""',
+      totalInc,
+      totalExp,
+      `"অবশিষ্ট জের: ৳ ${netBal}"`
+    ].join(",");
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows, totalsRow].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `donations_ledger_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Export donations ledger to PDF / Print Report
+  const downloadPDF = () => {
+    if (allDonations.length === 0) {
+      alert("ডাউনলোড করার মতো কোনো হিসাব পাওয়া যায়নি");
+      return;
+    }
+
+    const filteredLedger = allDonations.filter((item) => {
+      if (!item.date) return true;
+      const dateStr = item.date;
+      const numbers = dateStr.match(/\d+/g) || [];
+      const day = numbers[0] || '';
+      const year = numbers[1] || '';
+      
+      if (filterYear && year !== filterYear) return false;
+      if (filterDay && day !== filterDay) return false;
+      
+      if (filterMonth) {
+        const months: Record<string, string[]> = {
+          'January': ['January', 'জানুয়ারি'],
+          'February': ['February', 'ফেব্রুয়ারি'],
+          'March': ['March', 'মার্চ'],
+          'April': ['April', 'এপ্রিল'],
+          'May': ['May', 'মে'],
+          'June': ['June', 'জুন'],
+          'July': ['July', 'জুলাই'],
+          'August': ['August', 'আগস্ট'],
+          'September': ['September', 'সেপ্টেম্বর'],
+          'October': ['October', 'অক্টোবর'],
+          'November': ['November', 'নভেম্বর'],
+          'December': ['December', 'ডিসেম্বর']
+        };
+        if (!months[filterMonth]?.some((m: string) => dateStr.includes(m))) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (filteredLedger.length === 0) {
+      alert("নির্বাচিত ফিল্টারে কোনো হিসাব পাওয়া যায়নি");
+      return;
+    }
+
+    const totalIncome = filteredLedger.reduce((sum, item) => sum + (item.incomeAmount || 0), 0);
+    const totalExpense = filteredLedger.reduce((sum, item) => sum + (item.expenseAmount || 0), 0);
+    const netBalance = totalIncome - totalExpense;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("পপ-আপ উইন্ডো ব্লক করা আছে। অনুগ্রহ করে ব্রাউজারে পপ-আপ অনুমতি দিন।");
+      return;
+    }
+
+    const rowsHtml = filteredLedger.map((item, idx) => `
+      <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 0 ? 'background-color: #f9fafb;' : ''}">
+        <td style="padding: 10px; font-size: 13px; white-space: nowrap;">${item.date}</td>
+        <td style="padding: 10px; font-size: 13px; font-weight: 600;">${item.donorName}</td>
+        <td style="padding: 10px; font-size: 13px; color: #4b5563;">${item.phone || "-"}</td>
+        <td style="padding: 10px; font-size: 13px;">${item.method}</td>
+        <td style="padding: 10px; font-size: 13px; text-align: right; color: #16a34a; font-weight: bold; white-space: nowrap;">
+          ${item.incomeAmount > 0 ? "৳ " + item.incomeAmount.toLocaleString('bn-BD') : "-"}
+        </td>
+        <td style="padding: 10px; font-size: 13px; text-align: right; color: #dc2626; font-weight: bold; white-space: nowrap;">
+          ${item.expenseAmount > 0 ? "৳ " + item.expenseAmount.toLocaleString('bn-BD') : "-"}
+        </td>
+        <td style="padding: 10px; font-size: 12px; color: #6b7280;">${item.remarks || "-"}</td>
+      </tr>
+    `).join("");
+
+    const todayBn = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    const reportHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>আয়-ব্যয় ও দানের হিসাব - HF সমাজসেবা সংঘ</title>
+          <meta charset="utf-8" />
+          <style>
+            body { font-family: 'SolaimanLipi', 'Segoe UI', Arial, sans-serif; padding: 30px; color: #1f2937; line-height: 1.5; }
+            .header { text-align: center; border-bottom: 3px double #1e40af; padding-bottom: 15px; margin-bottom: 25px; }
+            .header h1 { margin: 0; color: #1e40af; font-size: 26px; }
+            .header p { margin: 4px 0 0 0; color: #4b5563; font-size: 14px; font-weight: 500; }
+            .summary-cards { display: flex; justify-content: space-between; margin-bottom: 25px; gap: 15px; }
+            .card { flex: 1; padding: 15px; border-radius: 10px; border: 1px solid #e5e7eb; text-align: center; }
+            .card-inc { background-color: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+            .card-exp { background-color: #fef2f2; border-color: #fecaca; color: #991b1b; }
+            .card-bal { background-color: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+            .card-title { font-size: 13px; font-weight: bold; }
+            .card-val { font-size: 22px; font-weight: 800; margin-top: 5px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th { background-color: #f3f4f6; padding: 12px 10px; text-align: left; font-size: 13px; border-bottom: 2px solid #9ca3af; color: #111827; }
+            tfoot tr td { padding: 14px 10px; font-weight: bold; font-size: 14px; background-color: #f3f4f6; border-top: 2px solid #6b7280; }
+            .print-btn { display: block; margin: 0 auto 20px auto; padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; }
+            @media print {
+              .print-btn { display: none; }
+              body { padding: 0; }
+              @page { margin: 1.5cm; }
+            }
+          </style>
+        </head>
+        <body>
+          <button class="print-btn" onclick="window.print()">🖨️ PDF সেভ বা প্রিন্ট করুন</button>
+          
+          <div class="header">
+            <h1>HF সমাজসেবা সংঘ</h1>
+            <p>আয়-ব্যয় ও দানের হিসাব (লেজার স্টেটমেন্ট)</p>
+            <p style="font-size: 12px; color: #6b7280; margin-top: 6px;">রিপোর্ট ডাউনলোডের তারিখ: ${todayBn}</p>
+          </div>
+
+          <div class="summary-cards">
+            <div class="card card-inc">
+              <div class="card-title">মোট আয়</div>
+              <div class="card-val">৳ ${totalIncome.toLocaleString('bn-BD')}</div>
+            </div>
+            <div class="card card-exp">
+              <div class="card-title">মোট ব্যয়</div>
+              <div class="card-val">৳ ${totalExpense.toLocaleString('bn-BD')}</div>
+            </div>
+            <div class="card card-bal">
+              <div class="card-title">অবশিষ্ট জের (নিট ব্যালেন্স)</div>
+              <div class="card-val" style="${netBalance < 0 ? 'color: #dc2626;' : 'color: #047857;'}">৳ ${netBalance.toLocaleString('bn-BD')}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>তারিখ</th>
+                <th>দাতার নাম / বিবরণ</th>
+                <th>মোবাইল নম্বর</th>
+                <th>পেমেন্ট পদ্ধতি</th>
+                <th style="text-align: right;">আয় (৳)</th>
+                <th style="text-align: right;">ব্যয় (৳)</th>
+                <th>রিমার্কস</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4" style="text-align: right;">সর্বমোট:</td>
+                <td style="text-align: right; color: #16a34a;">৳ ${totalIncome.toLocaleString('bn-BD')}</td>
+                <td style="text-align: right; color: #dc2626;">৳ ${totalExpense.toLocaleString('bn-BD')}</td>
+                <td style="color: #1e40af;">জের: ৳ ${netBalance.toLocaleString('bn-BD')}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(reportHtml);
+    printWindow.document.close();
+  };
+
+  // Clear all registered users / members
+  const clearAllUsersData = () => {
+    if (window.confirm("আপনি কি নিশ্চিত যে সকল সদস্যের ডাটা রিমুভ করতে চান? এটি পূর্বাবস্থায় ফেরানো যাবে না।")) {
+      localStorage.setItem("allUsers", "[]");
+      setAllUsers([]);
+      loadAllData();
+      alert("সকল সদস্যের এন্ট্রি মুছে দেওয়া হয়েছে");
+    }
   };
 
   if (!isAdminLoggedIn) {
@@ -141,24 +1310,47 @@ export default function AdminPanel() {
         <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
           <div className="text-center mb-8">
             <div className="text-5xl mb-4">🔐</div>
-            <h1 className="text-3xl font-bold text-blue-800">সুপার এডমিন</h1>
+            <h1 className="text-3xl font-bold text-blue-800">এডমিন প্যানেল</h1>
             <p className="text-gray-500 mt-2">প্যানেল এ স্বাগতম</p>
           </div>
 
           <form onSubmit={handleAdminLogin} className="space-y-4">
             <div>
               <label className="block text-gray-700 font-medium mb-2">
-                এডমিন পাসওয়ার্ড
+                ইউজার নেম
               </label>
               <input
-                type="password"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
+                type="text"
+                value={adminUsername}
+                onChange={(e) => setAdminUsername(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-600"
-                placeholder="পাসওয়ার্ড দিন"
+                placeholder="ইউজার নেম দিন (যেমন: mdtarek48)"
               />
-              {passwordError && (
-                <p className="text-red-600 text-sm mt-2">{passwordError}</p>
+            </div>
+
+            <div>
+              <label className="block text-gray-700 font-medium mb-2">
+                পাসওয়ার্ড
+              </label>
+              <div className="relative">
+                <input
+                  type={showAdminLoginPassword ? "text" : "password"}
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-600 pr-11"
+                  placeholder="পাসওয়ার্ড দিন"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAdminLoginPassword(!showAdminLoginPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-blue-600 text-lg transition-colors p-1 cursor-pointer select-none"
+                  title={showAdminLoginPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখুন"}
+                >
+                  {showAdminLoginPassword ? "👁️" : "🙈"}
+                </button>
+              </div>
+              {loginError && (
+                <p className="text-red-600 text-sm mt-2">{loginError}</p>
               )}
             </div>
 
@@ -187,44 +1379,18 @@ export default function AdminPanel() {
     <div className="bg-gray-50 min-h-screen py-8">
       <div className="container mx-auto px-4">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-4xl font-bold text-blue-800 flex items-center gap-3">
-              🔐 সুপার এডমিন প্যানেল
-            </h1>
-            <p className="text-gray-600 mt-2">সিস্টেম পরিচালনা এবং তথ্য দেখুন</p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition-colors"
-          >
-            লগআউট
-          </button>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <p className="text-gray-600 text-sm">মোট ব্যবহারকারী</p>
-            <p className="text-3xl font-bold text-blue-600 mt-2">{totalStats.totalUsers}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <p className="text-gray-600 text-sm">মোট দান</p>
-            <p className="text-3xl font-bold text-green-600 mt-2">৳ {totalStats.totalAmount.toLocaleString('bn-BD')}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <p className="text-gray-600 text-sm">মোট দান সংখ্যা</p>
-            <p className="text-3xl font-bold text-purple-600 mt-2">{totalStats.totalDonations}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <p className="text-gray-600 text-sm">অপেক্ষমাণ দান</p>
-            <p className="text-3xl font-bold text-orange-600 mt-2">{totalStats.pendingDonations}</p>
-          </div>
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-blue-800 flex items-center gap-3">
+            🔐 এডমিন প্যানেল
+          </h1>
+          <p className="text-gray-600 mt-2">
+            সিস্টেম পরিচালনা এবং তথ্য দেখুন {loggedInAdminUser && <span className="text-blue-600 font-semibold">({loggedInAdminUser})</span>}
+          </p>
         </div>
 
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow mb-8">
-          <div className="flex border-b">
+          <div className="flex border-b flex-wrap">
             <button
               onClick={() => setActiveTab("users")}
               className={`flex-1 py-4 px-6 font-bold text-center transition-colors ${
@@ -233,7 +1399,17 @@ export default function AdminPanel() {
                   : "bg-gray-50 text-gray-700 hover:bg-gray-100"
               }`}
             >
-              সকল ব্যবহারকারী ({allUsers.length})
+              সকল সদস্য ({allUsers.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("pending-users")}
+              className={`flex-1 py-4 px-6 font-bold text-center transition-colors ${
+                activeTab === "pending-users"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              নতুন সদস্য ({pendingUsers.filter(u => u.status === "pending").length})
             </button>
             <button
               onClick={() => setActiveTab("pending")}
@@ -246,48 +1422,122 @@ export default function AdminPanel() {
               অপেক্ষমাণ দান ({pendingDonations.length})
             </button>
             <button
-              onClick={() => setActiveTab("settings")}
+              onClick={() => {
+                setActiveTab("all-donations");
+                setTimeout(() => loadAllData(), 50);
+              }}
               className={`flex-1 py-4 px-6 font-bold text-center transition-colors ${
-                activeTab === "settings"
+                activeTab === "all-donations"
                   ? "bg-blue-600 text-white"
                   : "bg-gray-50 text-gray-700 hover:bg-gray-100"
               }`}
             >
-              সেটিংস
+              📊 দানের হিসাব ({allDonations.length})
             </button>
           </div>
 
-          {/* Users Tab */}
+          {/* Members Tab */}
           {activeTab === "users" && (
             <div className="p-6 overflow-x-auto">
+              <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800">👥 সকল সদস্যের তালিকা</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">সংগঠনের সকল নিবন্ধিত ও ম্যানুয়াল সদস্য</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setAddUserError("");
+                    setShowAddUserModal(true);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4.5 py-2.5 rounded-lg font-bold shadow-md hover:shadow-indigo-500/20 transition-all flex items-center gap-2 text-sm cursor-pointer"
+                >
+                  <span>➕</span>
+                  <span>ম্যানুয়ালি সদস্য এন্ট্রি</span>
+                </button>
+              </div>
+
+              {/* Summary Stats Cards */}
+              <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 rounded-2xl shadow-lg border border-blue-500/20 flex items-center justify-between">
+                  <div>
+                    <p className="text-blue-100 text-xs font-bold uppercase tracking-wider">মোট সদস্য</p>
+                    <h3 className="text-3xl font-extrabold mt-1 text-white flex items-baseline gap-1">
+                      <span>{allUsers.length}</span>
+                      <span className="text-sm font-normal text-blue-200">জন</span>
+                    </h3>
+                    <p className="text-xs text-blue-200 mt-1">সর্বমোট নিবন্ধিত সদস্য</p>
+                  </div>
+                  <div className="w-12 h-12 bg-white/15 backdrop-blur-md rounded-2xl flex items-center justify-center text-2xl shadow-inner border border-white/20">
+                    👥
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-r from-red-600 to-rose-700 text-white p-5 rounded-2xl shadow-lg border border-red-500/20 flex items-center justify-between">
+                  <div>
+                    <p className="text-red-100 text-xs font-bold uppercase tracking-wider">রক্তদাতা সদস্য</p>
+                    <h3 className="text-3xl font-extrabold mt-1 text-white flex items-baseline gap-1">
+                      <span>{allUsers.filter(u => u.bloodGroup && u.bloodGroup !== "-").length}</span>
+                      <span className="text-sm font-normal text-red-200">জন</span>
+                    </h3>
+                    <p className="text-xs text-red-200 mt-1">রক্তের গ্রুপযুক্ত সদস্য</p>
+                  </div>
+                  <div className="w-12 h-12 bg-white/15 backdrop-blur-md rounded-2xl flex items-center justify-center text-2xl shadow-inner border border-white/20">
+                    🩸
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-5 rounded-2xl shadow-lg border border-emerald-500/20 flex items-center justify-between">
+                  <div>
+                    <p className="text-emerald-100 text-xs font-bold uppercase tracking-wider">দানকারী সদস্য</p>
+                    <h3 className="text-3xl font-extrabold mt-1 text-white flex items-baseline gap-1">
+                      <span>{allUsers.filter(u => (u.totalDonation || 0) > 0).length}</span>
+                      <span className="text-sm font-normal text-emerald-200">জন</span>
+                    </h3>
+                    <p className="text-xs text-emerald-200 mt-1">কমপক্ষে ১টি দান সম্পূর্ণ</p>
+                  </div>
+                  <div className="w-12 h-12 bg-white/15 backdrop-blur-md rounded-2xl flex items-center justify-center text-2xl shadow-inner border border-white/20">
+                    💚
+                  </div>
+                </div>
+              </div>
               {allUsers.length > 0 ? (
                 <table className="w-full">
                   <thead className="bg-gray-100">
                     <tr>
                       <th className="text-left py-3 px-4">নাম</th>
-                      <th className="text-left py-3 px-4">ইমেইল</th>
-                      <th className="text-left py-3 px-4">মোবাইল</th>
-                      <th className="text-left py-3 px-4">রক্ত গ্রুপ</th>
-                      <th className="text-left py-3 px-4">মোট দান</th>
-                      <th className="text-left py-3 px-4">দান সংখ্যা</th>
-                      <th className="text-left py-3 px-4">যোগদান তারিখ</th>
+                      <th className="text-left py-3 px-4">মোবাইল নাম্বার</th>
+                      <th className="text-left py-3 px-4">ঠিকানা</th>
+                      <th className="text-left py-3 px-4">রক্তের গ্রুপ</th>
+                      <th className="text-left py-3 px-4">যোগদানের তারিখ</th>
                       <th className="text-center py-3 px-4">অ্যাকশন</th>
                     </tr>
                   </thead>
                   <tbody>
                     {allUsers.map((user, index) => (
                       <tr key={index} className="border-t hover:bg-gray-50">
-                        <td className="py-3 px-4">{user.name}</td>
-                        <td className="py-3 px-4">{user.email}</td>
+                        <td className="py-3 px-4 font-medium">{user.name}</td>
                         <td className="py-3 px-4">{user.phone}</td>
-                        <td className="py-3 px-4">{user.bloodGroup || "-"}</td>
-                        <td className="py-3 px-4">৳ {user.totalDonation.toLocaleString('bn-BD')}</td>
-                        <td className="py-3 px-4">{user.donationCount}</td>
-                        <td className="py-3 px-4">{user.joinDate}</td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 px-4">{user.address || "-"}</td>
+                        <td className="py-3 px-4">
+                          {user.bloodGroup ? (
+                            <span className="bg-red-100 text-red-700 px-2 py-1 rounded text-sm font-semibold">
+                              {user.bloodGroup}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">{user.joinDate || (user as any).registrationDate || "-"}</td>
+                        <td className="py-3 px-4 text-center space-x-2">
                           <button
-                            onClick={() => deleteUser(user.phone)}
-                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition-colors"
+                            onClick={() => openEditModal(user)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm transition-colors cursor-pointer"
+                          >
+                            এডিট
+                          </button>
+                          <button
+                            onClick={() => deleteUser(user.phone || user.email || user.name)}
+                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition-colors cursor-pointer"
                           >
                             মুছুন
                           </button>
@@ -297,7 +1547,7 @@ export default function AdminPanel() {
                   </tbody>
                 </table>
               ) : (
-                <p className="text-center text-gray-500 py-8">কোনো ব্যবহারকারী পাওয়া যায়নি</p>
+                <p className="text-center text-gray-500 py-8">কোনো সদস্য পাওয়া যায়নি</p>
               )}
             </div>
           )}
@@ -311,28 +1561,52 @@ export default function AdminPanel() {
                     <tr>
                       <th className="text-left py-3 px-4">দাতার নাম</th>
                       <th className="text-left py-3 px-4">মোবাইল</th>
+                      <th className="text-left py-3 px-4">রক্তের গ্রুপ</th>
                       <th className="text-left py-3 px-4">দান পরিমাণ</th>
                       <th className="text-left py-3 px-4">পদ্ধতি</th>
+                      <th className="text-left py-3 px-4">যে নাম্বার থেকে টাকা আসছে</th>
                       <th className="text-left py-3 px-4">ট্রানজ্যাকশন ID</th>
                       <th className="text-left py-3 px-4">তারিখ</th>
+                      <th className="text-left py-3 px-4">স্ট্যাটাস</th>
                       <th className="text-center py-3 px-4">অ্যাকশন</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pendingDonations.map((donation, index) => (
                       <tr key={index} className="border-t hover:bg-gray-50">
-                        <td className="py-3 px-4">{donation.donorName}</td>
-                        <td className="py-3 px-4">{donation.donorPhone}</td>
-                        <td className="py-3 px-4">৳ {donation.amount.toLocaleString('bn-BD')}</td>
+                        <td className="py-3 px-4 font-medium">{donation.donorName || "অজানা দাতা"}</td>
+                        <td className="py-3 px-4">{donation.donorPhone && donation.donorPhone !== "-" ? donation.donorPhone : (donation.senderPhone || "-")}</td>
+                        <td className="py-3 px-4">
+                          {donation.donorBloodGroup && donation.donorBloodGroup !== "-" ? (
+                            <span className="bg-red-100 text-red-700 px-2 py-1 rounded text-sm font-semibold">
+                              {donation.donorBloodGroup}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-green-600">৳ {donation.amount.toLocaleString('bn-BD')}</td>
                         <td className="py-3 px-4">{donation.method}</td>
-                        <td className="py-3 px-4">{donation.transactionId}</td>
+                        <td className="py-3 px-4 font-bold text-blue-700">{donation.senderPhone || donation.donorPhone || "-"}</td>
+                        <td className="py-3 px-4 text-sm font-mono">{donation.transactionId}</td>
                         <td className="py-3 px-4">{donation.date}</td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 px-4">
+                          <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">
+                            অপেক্ষমাণ
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-center space-x-2">
                           <button
-                            onClick={() => deletePendingDonation(index)}
+                            onClick={() => approvePendingDonation(index)}
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm transition-colors"
+                          >
+                            এপ্রুভ
+                          </button>
+                          <button
+                            onClick={() => rejectPendingDonation(index)}
                             className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition-colors"
                           >
-                            মুছুন
+                            বাতিল
                           </button>
                         </td>
                       </tr>
@@ -345,46 +1619,858 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* Settings Tab */}
-          {activeTab === "settings" && (
+          {/* Pending Users Tab */}
+          {activeTab === "pending-users" && (
+            <div className="p-6 overflow-x-auto">
+              {pendingUsers.filter(u => u.status === "pending").length > 0 ? (
+                <table className="w-full">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="text-left py-3 px-4">নাম</th>
+                      <th className="text-left py-3 px-4">ইমেইল</th>
+                      <th className="text-left py-3 px-4">মোবাইল</th>
+                      <th className="text-left py-3 px-4">রক্তের গ্রুপ</th>
+                      <th className="text-left py-3 px-4">নিবন্ধন তারিখ</th>
+                      <th className="text-left py-3 px-4">স্ট্যাটাস</th>
+                      <th className="text-center py-3 px-4">অ্যাকশন</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingUsers.filter(u => u.status === "pending").map((user, index) => (
+                      <tr key={index} className="border-t hover:bg-gray-50">
+                        <td className="py-3 px-4 font-medium">{user.name}</td>
+                        <td className="py-3 px-4">{user.email}</td>
+                        <td className="py-3 px-4">{user.phone}</td>
+                        <td className="py-3 px-4">
+                          {user.bloodGroup ? (
+                            <span className="bg-red-100 text-red-700 px-2 py-1 rounded text-sm font-semibold">
+                              {user.bloodGroup}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">{user.registrationDate}</td>
+                        <td className="py-3 px-4">
+                          <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">
+                            পেন্ডিং
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-center space-x-2">
+                          <button
+                            onClick={() => approvePendingUser(user.email)}
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm transition-colors"
+                          >
+                            এপ্রুভ করুন
+                          </button>
+                          <button
+                            onClick={() => rejectPendingUser(user.email)}
+                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition-colors"
+                          >
+                            বাতিল করুন
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="text-5xl mb-4">✅</div>
+                  <p className="text-gray-500 text-lg">কোনো পেন্ডিং সদস্য নেই</p>
+                  <p className="text-gray-400 text-sm mt-2">সকল নিবন্ধন অনুমোদিত হয়েছে</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* All Donations / Income & Expense Ledger Tab */}
+          {activeTab === "all-donations" && (
             <div className="p-6">
-              <div className="max-w-2xl">
-                <h2 className="text-2xl font-bold text-blue-800 mb-6">সিস্টেম সেটিংস</h2>
-                
-                <div className="bg-red-50 border-2 border-red-300 rounded-lg p-6 mb-6">
-                  <h3 className="text-lg font-bold text-red-800 mb-4">⚠️ বিপদজনক এলাকা</h3>
-                  <p className="text-gray-700 mb-4">
-                    নিচের বাটনে ক্লিক করলে সমস্ত ডেটা মুছে যাবে। এই পদক্ষেপটি পূর্বাবাস করা যাবে না।
-                  </p>
+              <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-blue-800">📊 আয়-ব্যয় ও দানের হিসাব (লেজার)</h2>
+                  <p className="text-gray-600 text-sm mt-1">সমস্ত আয়, দান, ব্যয় এবং অবশিষ্ট জেরে হিসেব</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
                   <button
-                    onClick={clearAllData}
-                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+                    onClick={downloadExcel}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-lg shadow transition-colors flex items-center gap-2 text-sm"
+                    title="এক্সেল (Excel/CSV) ফাইল ডাউনলোড করুন"
                   >
-                    সমস্ত ডেটা মুছুন
+                    <span>📊</span> Excel ডাউনলোড
+                  </button>
+                  <button
+                    onClick={downloadPDF}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-lg shadow transition-colors flex items-center gap-2 text-sm"
+                    title="PDF ডকুমেন্ট ডাউনলোড/প্রিন্ট করুন"
+                  >
+                    <span>📄</span> PDF ডাউনলোড
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowLedgerModal(true);
+                      setLedgerType("income");
+                      setLedgerName("");
+                      setLedgerPhone("");
+                      setLedgerAmount("");
+                      setLedgerDate(new Date().toISOString().split('T')[0]);
+                      setLedgerRemarks("");
+                    }}
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-4 rounded-lg shadow transition-colors flex items-center gap-2 text-sm"
+                  >
+                    ➕ নতুন আয়/ব্যয় এন্ট্রি
                   </button>
                 </div>
+              </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                  <h3 className="text-lg font-bold text-blue-800 mb-4">📊 সিস্টেম তথ্য</h3>
-                  <div className="space-y-2">
-                    <p className="text-gray-700">
-                      <strong>মোট ব্যবহারকারী:</strong> {totalStats.totalUsers}
-                    </p>
-                    <p className="text-gray-700">
-                      <strong>মোট সংগৃহীত টাকা:</strong> ৳ {totalStats.totalAmount.toLocaleString('bn-BD')}
-                    </p>
-                    <p className="text-gray-700">
-                      <strong>মোট দান সংখ্যা:</strong> {totalStats.totalDonations}
-                    </p>
-                    <p className="text-gray-700">
-                      <strong>অপেক্ষমাণ দান:</strong> {totalStats.pendingDonations}
-                    </p>
+              {(() => {
+                const filteredLedger = allDonations.filter((item) => {
+                  if (!item.date) return true;
+                  const dateStr = item.date;
+                  const numbers = dateStr.match(/\d+/g) || [];
+                  const day = numbers[0] || '';
+                  const year = numbers[1] || '';
+                  
+                  if (filterYear && year !== filterYear) return false;
+                  if (filterDay && day !== filterDay) return false;
+                  
+                  if (filterMonth) {
+                    const months: Record<string, string[]> = {
+                      'January': ['January', 'জানুয়ারি'],
+                      'February': ['February', 'ফেব্রুয়ারি'],
+                      'March': ['March', 'মার্চ'],
+                      'April': ['April', 'এপ্রিল'],
+                      'May': ['May', 'মে'],
+                      'June': ['June', 'জুন'],
+                      'July': ['July', 'জুলাই'],
+                      'August': ['August', 'আগস্ট'],
+                      'September': ['September', 'সেপ্টেম্বর'],
+                      'October': ['October', 'অক্টোবর'],
+                      'November': ['November', 'নভেম্বর'],
+                      'December': ['December', 'ডিসেম্বর']
+                    };
+                    if (!months[filterMonth]?.some((m: string) => dateStr.includes(m))) {
+                      return false;
+                    }
+                  }
+                  return true;
+                });
+
+                const totalIncome = filteredLedger.reduce((sum, item) => sum + (item.incomeAmount || 0), 0);
+                const totalExpense = filteredLedger.reduce((sum, item) => sum + (item.expenseAmount || 0), 0);
+                const netBalance = totalIncome - totalExpense;
+
+                return (
+                  <div>
+                    {/* Summary Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div className="bg-green-50 border-2 border-green-200 rounded-xl p-5 shadow-sm">
+                        <p className="text-green-700 font-bold text-sm">মোট আয়</p>
+                        <p className="text-3xl font-extrabold text-green-700 mt-1">৳ {totalIncome.toLocaleString('bn-BD')}</p>
+                      </div>
+                      <div className="bg-red-50 border-2 border-red-200 rounded-xl p-5 shadow-sm">
+                        <p className="text-red-700 font-bold text-sm">মোট ব্যয়</p>
+                        <p className="text-3xl font-extrabold text-red-700 mt-1">৳ {totalExpense.toLocaleString('bn-BD')}</p>
+                      </div>
+                      <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5 shadow-sm">
+                        <p className="text-blue-800 font-bold text-sm">অবশিষ্ট জের (নিট ব্যালেন্স)</p>
+                        <p className={`text-3xl font-extrabold mt-1 ${netBalance >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                          ৳ {netBalance.toLocaleString('bn-BD')}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Donations Ledger Table */}
+                    {filteredLedger.length > 0 ? (
+                      <div className="overflow-x-auto border rounded-xl shadow-sm">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="bg-gray-100 border-b border-gray-200 text-gray-800">
+                            <tr>
+                              <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">তারিখ</th>
+                              <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">দাতার নাম</th>
+                              <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">মোবাইল নাম্বার</th>
+                              <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">পেমেন্ট পদ্ধতি</th>
+                              <th className="py-3.5 px-4 font-bold text-green-700 border-r border-gray-200 text-right">আয়</th>
+                              <th className="py-3.5 px-4 font-bold text-red-700 border-r border-gray-200 text-right">ব্যয়</th>
+                              <th className="py-3.5 px-4 font-bold text-gray-800">রিমার্কস</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredLedger.map((item, index) => (
+                              <tr key={index} className="border-t border-gray-200 hover:bg-gray-50 transition-colors">
+                                <td className="py-3 px-4 text-gray-700 border-r border-gray-100 font-medium whitespace-nowrap">{item.date}</td>
+                                <td className="py-3 px-4 text-gray-900 border-r border-gray-100 font-semibold">{item.donorName}</td>
+                                <td className="py-3 px-4 text-gray-600 border-r border-gray-100 whitespace-nowrap">{item.phone || "-"}</td>
+                                <td className="py-3 px-4 border-r border-gray-100">
+                                  <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded font-semibold whitespace-nowrap">
+                                    {item.method}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-right font-bold text-green-600 border-r border-gray-100 whitespace-nowrap">
+                                  {item.incomeAmount > 0 ? `৳ ${item.incomeAmount.toLocaleString('bn-BD')}` : "-"}
+                                </td>
+                                <td className="py-3 px-4 text-right font-bold text-red-600 border-r border-gray-100 whitespace-nowrap">
+                                  {item.expenseAmount > 0 ? `৳ ${item.expenseAmount.toLocaleString('bn-BD')}` : "-"}
+                                </td>
+                                <td className="py-3 px-4 text-gray-600 text-sm">{item.remarks || "-"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-gray-100 border-t-2 border-gray-300 font-bold">
+                            <tr>
+                              <td colSpan={4} className="py-4 px-4 text-right font-bold text-gray-800 text-base border-r border-gray-200">
+                                মোট হিসাব:
+                              </td>
+                              <td className="py-4 px-4 text-right font-bold text-green-700 text-base border-r border-gray-200 whitespace-nowrap">
+                                ৳ {totalIncome.toLocaleString('bn-BD')}
+                              </td>
+                              <td className="py-4 px-4 text-right font-bold text-red-700 text-base border-r border-gray-200 whitespace-nowrap">
+                                ৳ {totalExpense.toLocaleString('bn-BD')}
+                              </td>
+                              <td className="py-4 px-4 text-left font-bold text-blue-900 text-base whitespace-nowrap">
+                                অবশিষ্ট জের:{" "}
+                                <span className={netBalance >= 0 ? "text-emerald-700 font-extrabold" : "text-red-700 font-extrabold"}>
+                                  ৳ {netBalance.toLocaleString('bn-BD')}
+                                </span>
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+                        <div className="text-5xl mb-3">📋</div>
+                        <p className="text-gray-500 text-lg">কোনো আয়-ব্যয় হিসাব পাওয়া যায়নি</p>
+                      </div>
+                    )}
                   </div>
+                );
+              })()}
+            </div>
+          )}
+
+        </div>
+
+        {/* Edit User Modal */}
+        {editingUser && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-blue-800">ব্যবহারকারী এডিট করুন</h2>
+                <button
+                  onClick={closeEditModal}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">
+                    নাম
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">
+                    মোবাইল নম্বর
+                  </label>
+                  <input
+                    type="text"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">
+                    ঠিকানা
+                  </label>
+                  <input
+                    type="text"
+                    value={editAddress}
+                    onChange={(e) => setEditAddress(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-600"
+                    placeholder="বর্তমান ঠিকানা"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">
+                    রক্তের গ্রুপ
+                  </label>
+                  <select
+                    value={editBloodGroup}
+                    onChange={(e) => setEditBloodGroup(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-600"
+                  >
+                    <option value="">নির্বাচন করুন</option>
+                    <option value="A+">A+</option>
+                    <option value="A-">A-</option>
+                    <option value="B+">B+</option>
+                    <option value="B-">B-</option>
+                    <option value="AB+">AB+</option>
+                    <option value="AB-">AB-</option>
+                    <option value="O+">O+</option>
+                    <option value="O-">O-</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={closeEditModal}
+                  className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  বাতিল করুন
+                </button>
+                <button
+                  onClick={saveEditedUser}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  সংরক্ষণ করুন
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Manual Donation Modal */}
+        {manualDonationUser && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-purple-800">💰 ম্যানুয়াল দান যোগ করুন</h2>
+                <button
+                  onClick={closeManualDonationModal}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-purple-50 p-3 rounded-lg">
+                  <p className="text-sm text-gray-600">দাতা</p>
+                  <p className="text-lg font-bold text-purple-800">{manualDonationUser.name}</p>
+                  <p className="text-sm text-gray-500">{manualDonationUser.phone}</p>
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">
+                    দান পরিমাণ (৳)
+                  </label>
+                  <input
+                    type="number"
+                    value={manualDonationAmount}
+                    onChange={(e) => setManualDonationAmount(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-600"
+                    placeholder="পরিমাণ দিন"
+                    min="1"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">
+                    তারিখ
+                  </label>
+                  <input
+                    type="date"
+                    value={manualDonationDate}
+                    onChange={(e) => setManualDonationDate(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">
+                    পদ্ধতি
+                  </label>
+                  <select
+                    value={manualDonationMethod}
+                    onChange={(e) => setManualDonationMethod(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-600"
+                  >
+                    <option value="নগদ">নগদ</option>
+                    <option value="বিকাশ">বিকাশ</option>
+                    <option value="রকেট">রকেট</option>
+                    <option value="অন্যান্য">অন্যান্য</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={closeManualDonationModal}
+                  className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  বাতিল করুন
+                </button>
+                <button
+                  onClick={saveManualDonation}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  দান সংরক্ষণ করুন
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Custom Ledger Modal (আয়/ব্যয় এন্ট্রি ফরম) */}
+        {showLedgerModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-gray-100 max-h-[90vh] overflow-hidden flex flex-col transform transition-all">
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white p-4 px-5 flex justify-between items-center relative">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-white/15 backdrop-blur-md rounded-xl flex items-center justify-center text-lg shadow-inner border border-white/20">
+                    ➕
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white tracking-wide">
+                      নতুন আয়/ব্যয় এন্ট্রি
+                    </h3>
+                    <p className="text-xs text-blue-200 mt-0.5">লেনদেনের বিস্তারিত তথ্য দিন</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowLedgerModal(false)}
+                  className="text-white/70 hover:text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Content - Scrollable */}
+              <div className="p-5 overflow-y-auto space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">এন্ট্রি টাইপ</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setLedgerType("income")}
+                      className={`py-2 px-3 rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+                        ledgerType === "income"
+                          ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      <span>💚</span> আয় (Income)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLedgerType("expense")}
+                      className={`py-2 px-3 rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+                        ledgerType === "expense"
+                          ? "bg-red-600 text-white shadow-md shadow-red-600/30"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      <span>❤️</span> ব্যয় (Expense)
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    {ledgerType === "income" ? "দাতার নাম / বিবরণ *" : "ব্যয়ের বিবরণ / গ্রহীতার নাম *"}
+                  </label>
+                  <input
+                    type="text"
+                    value={ledgerName}
+                    onChange={(e) => setLedgerName(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all"
+                    placeholder={ledgerType === "income" ? "যেমন: আব্দুর রহিম" : "যেমন: অফিস সরঞ্জাম ব্যয়"}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">টাকা (পরিমাণ ৳) *</label>
+                    <input
+                      type="number"
+                      value={ledgerAmount}
+                      onChange={(e) => setLedgerAmount(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all font-bold text-gray-800"
+                      placeholder="৳ ০.০০"
+                      min="1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">মোবাইল (ঐচ্ছিক)</label>
+                    <input
+                      type="text"
+                      value={ledgerPhone}
+                      onChange={(e) => setLedgerPhone(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all"
+                      placeholder="017XXXXXXXX"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">পেমেন্ট পদ্ধতি</label>
+                    <select
+                      value={ledgerMethod}
+                      onChange={(e) => setLedgerMethod(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all text-gray-800"
+                    >
+                      <option value="নগদ">নগদ</option>
+                      <option value="বিকাশ">বিকাশ</option>
+                      <option value="রকেট">রকেট</option>
+                      <option value="ব্যাংক">ব্যাংক</option>
+                      <option value="অন্যান্য">অন্যান্য</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">তারিখ</label>
+                    <input
+                      type="date"
+                      value={ledgerDate}
+                      onChange={(e) => setLedgerDate(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all font-medium text-gray-800 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">রিমার্কস (মন্তব্য)</label>
+                  <input
+                    type="text"
+                    value={ledgerRemarks}
+                    onChange={(e) => setLedgerRemarks(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all"
+                    placeholder="সংক্ষিপ্ত মন্তব্য লিখুন"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-3 border-t border-gray-100 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowLedgerModal(false)}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-all text-sm cursor-pointer"
+                  >
+                    বাতিল
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveCustomLedgerEntry}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow-md shadow-blue-600/30 transition-all text-sm cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>💾</span>
+                    <span>সংরক্ষণ করুন</span>
+                  </button>
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Add User Modal */}
+        {showAddUserModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
+            <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-gray-100 max-h-[90vh] overflow-hidden flex flex-col transform transition-all">
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white p-5 flex justify-between items-center relative">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/15 backdrop-blur-md rounded-xl flex items-center justify-center text-xl shadow-inner border border-white/20">
+                    👤
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white tracking-wide">
+                      নতুন সদস্য ম্যানুয়াল এন্ট্রি
+                    </h3>
+                    <p className="text-xs text-blue-200 mt-0.5">সদস্যের সঠিক তথ্য দিন</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAddUserModal(false)}
+                  className="text-white/70 hover:text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto">
+                <form onSubmit={handleAddUser} className="space-y-4">
+                  {addUserError && (
+                    <div className="bg-red-50 text-red-600 p-3.5 rounded-xl text-sm border border-red-200 flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>{addUserError}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1.5 flex items-center justify-between">
+                      <span>সদস্যের নাম</span>
+                      <span className="text-red-500 text-xs">*আবশ্যক</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={newUserName}
+                        onChange={(e) => setNewUserName(e.target.value)}
+                        placeholder="যেমন: মোঃ রফিকুল ইসলাম"
+                        className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1.5 flex items-center justify-between">
+                      <span>মোবাইল নাম্বার</span>
+                      <span className="text-red-500 text-xs">*আবশ্যক</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newUserPhone}
+                      onChange={(e) => setNewUserPhone(e.target.value)}
+                      placeholder="যেমন: 01700000000"
+                      className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all font-medium text-gray-800"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1.5">
+                      ঠিকানা (ঐচ্ছিক)
+                    </label>
+                    <input
+                      type="text"
+                      value={newUserAddress}
+                      onChange={(e) => setNewUserAddress(e.target.value)}
+                      placeholder="যেমন: ধানমন্ডি, ঢাকা"
+                      className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1.5">
+                        রক্তের গ্রুপ (ঐচ্ছিক)
+                      </label>
+                      <select
+                        value={newUserBloodGroup}
+                        onChange={(e) => setNewUserBloodGroup(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all text-gray-800"
+                      >
+                        <option value="">বাছাই করুন</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1.5">
+                        যোগদানের তারিখ (ঐচ্ছিক)
+                      </label>
+                      <input
+                        type="date"
+                        value={newUserJoinDate}
+                        onChange={(e) => setNewUserJoinDate(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all font-medium text-gray-800 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-5 border-t border-gray-100 mt-6">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddUserModal(false)}
+                      className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all text-sm cursor-pointer"
+                    >
+                      বাতিল
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-600/30 transition-all text-sm transform hover:-translate-y-0.5 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>💾</span>
+                      <span>সদস্য সেভ করুন</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Change Password Modal */}
+        {showPasswordModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-gray-100 overflow-hidden flex flex-col transform transition-all">
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white p-4 px-5 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-white/15 backdrop-blur-md rounded-xl flex items-center justify-center text-lg shadow-inner border border-white/20">
+                    🔑
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white tracking-wide">
+                      পাসওয়ার্ড পরিবর্তন করুন
+                    </h3>
+                    <p className="text-xs text-amber-100 mt-0.5">এডমিন একাউন্টের নতুন পাসওয়ার্ড দিন</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPasswordModal(false)}
+                  className="text-white/70 hover:text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <form onSubmit={handlePasswordChange} className="p-5 space-y-4">
+                {passwordError && (
+                  <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm border border-red-200 flex items-center gap-2">
+                    <span>⚠️</span>
+                    <span>{passwordError}</span>
+                  </div>
+                )}
+                {passwordSuccess && (
+                  <div className="bg-green-50 text-green-700 p-3 rounded-xl text-sm border border-green-200 flex items-center gap-2">
+                    <span>✅</span>
+                    <span>{passwordSuccess}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    বর্তমান পাসওয়ার্ড *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? "text" : "password"}
+                      value={currentPasswordInput}
+                      onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 text-sm transition-all pr-10"
+                      placeholder="বর্তমান পাসওয়ার্ড লিখুন"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-amber-600 transition-colors cursor-pointer select-none"
+                      title={showCurrentPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখুন"}
+                    >
+                      {showCurrentPassword ? (
+                        <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5 text-gray-400 hover:text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858-5.908a10.025 10.025 0 014.122-.963c4.478 0 8.268 2.943 9.543 7a9.97 9.97 0 01-2.555 4.14M9.88 9.88a3 3 0 104.243 4.243M3 3l18 18" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    নতুন পাসওয়ার্ড *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={newPasswordInput}
+                      onChange={(e) => setNewPasswordInput(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 text-sm transition-all pr-10"
+                      placeholder="নতুন পাসওয়ার্ড লিখুন"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-amber-600 transition-colors cursor-pointer select-none"
+                      title={showNewPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখুন"}
+                    >
+                      {showNewPassword ? (
+                        <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5 text-gray-400 hover:text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858-5.908a10.025 10.025 0 014.122-.963c4.478 0 8.268 2.943 9.543 7a9.97 9.97 0 01-2.555 4.14M9.88 9.88a3 3 0 104.243 4.243M3 3l18 18" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    নতুন পাসওয়ার্ড নিশ্চিত করুন *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      value={confirmPasswordInput}
+                      onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 text-sm transition-all pr-10"
+                      placeholder="পাসওয়ার্ডটি পুনরায় লিখুন"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-amber-600 transition-colors cursor-pointer select-none"
+                      title={showConfirmPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখুন"}
+                    >
+                      {showConfirmPassword ? (
+                        <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5 text-gray-400 hover:text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858-5.908a10.025 10.025 0 014.122-.963c4.478 0 8.268 2.943 9.543 7a9.97 9.97 0 01-2.555 4.14M9.88 9.88a3 3 0 104.243 4.243M3 3l18 18" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-3 border-t border-gray-100 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordModal(false)}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-all text-sm cursor-pointer"
+                  >
+                    বাতিল
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl shadow-md shadow-amber-600/30 transition-all text-sm cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>💾</span>
+                    <span>পাসওয়ার্ড আপডেট করুন</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

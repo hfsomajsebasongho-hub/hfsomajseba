@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function DonationForm() {
   const [amount, setAmount] = useState("");
@@ -22,6 +22,20 @@ export default function DonationForm() {
     { id: "nagad", name: "নগদ", icon: "/nagad.png", number: "01601236232", color: "bg-orange-50 border-orange-300" },
     { id: "rocket", name: "রকেট", icon: "/rocket.png", number: "01601236232", color: "bg-purple-50 border-purple-300" },
   ];
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem("userData");
+    if (savedUser) {
+      try {
+        const u = JSON.parse(savedUser);
+        if (u.name) setName(u.name);
+        if (u.phone) setPhone(u.phone);
+        if (u.bloodGroup) setBloodGroup(u.bloodGroup);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,43 +65,68 @@ export default function DonationForm() {
       year: 'numeric' 
     });
     
+    const paymentMethodName = paymentMethods.find(p => p.id === paymentMethod)?.name || paymentMethod;
+    
+    const savedUserStr = localStorage.getItem("userData");
+    const savedUserObj = savedUserStr ? JSON.parse(savedUserStr) : null;
+
+    const donorPhoneVal = isAnonymous ? "-" : (phone || (savedUserObj ? savedUserObj.phone : "") || senderPhone || "-").trim();
+    const donorBloodGroupVal = isAnonymous ? "-" : (bloodGroup || (savedUserObj ? savedUserObj.bloodGroup : "") || "-").trim();
+    const donorNameVal = isAnonymous ? "বেনামী" : (name || (savedUserObj ? savedUserObj.name : "") || "অজানা দাতা").trim();
+
     // Save donation to localStorage
-    const savedUser = localStorage.getItem("userData");
-    if (savedUser) {
+    if (savedUserObj) {
       // Logged in user
-      const userData = JSON.parse(savedUser);
-      
-      // Save blood group if not already saved
-      if (!userData.bloodGroup && bloodGroup) {
-        userData.bloodGroup = bloodGroup;
+      if (!savedUserObj.bloodGroup && bloodGroup) {
+        savedUserObj.bloodGroup = bloodGroup;
+      }
+      if (!savedUserObj.phone && phone) {
+        savedUserObj.phone = phone;
       }
       
       const newDonation = {
         amount: donationAmount,
         date: banglaDate,
-        method: paymentMethods.find(p => p.id === paymentMethod)?.name || paymentMethod,
+        method: paymentMethodName,
         transactionId: transactionId,
         senderPhone: senderPhone,
         status: "pending"
       };
       
-      userData.donations = [newDonation, ...(userData.donations || [])];
-      userData.totalDonation = (userData.totalDonation || 0) + donationAmount;
-      userData.donationCount = (userData.donationCount || 0) + 1;
+      savedUserObj.donations = [newDonation, ...(savedUserObj.donations || [])];
+      // Recalculate total donation strictly from approved donations only
+      const approvedDons = (savedUserObj.donations || []).filter((d: any) => d.status === "approved");
+      savedUserObj.totalDonation = approvedDons.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
+      savedUserObj.donationCount = approvedDons.length;
       
-      localStorage.setItem("userData", JSON.stringify(userData));
+      localStorage.setItem("userData", JSON.stringify(savedUserObj));
+
+      // Also sync to allUsers list
+      const allUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
+      const userIdx = allUsers.findIndex((u: any) => 
+        (u.phone && u.phone === savedUserObj.phone) || 
+        (u.email && u.email !== "-" && u.email === savedUserObj.email) ||
+        (u.name && u.name === savedUserObj.name)
+      );
+      if (userIdx !== -1) {
+        allUsers[userIdx] = { ...allUsers[userIdx], ...savedUserObj };
+      } else {
+        allUsers.push(savedUserObj);
+      }
+      localStorage.setItem("allUsers", JSON.stringify(allUsers));
       
       // Also add to pendingDonations for admin approval
       const pendingDonations = JSON.parse(localStorage.getItem("pendingDonations") || "[]");
       pendingDonations.push({
         amount: donationAmount,
         date: banglaDate,
-        method: paymentMethods.find(p => p.id === paymentMethod)?.name || paymentMethod,
+        method: paymentMethodName,
         transactionId: transactionId,
         senderPhone: senderPhone,
-        donorName: userData.name || "অজানা",
-        donorPhone: userData.phone,
-        donorBloodGroup: userData.bloodGroup || "",
+        donorName: donorNameVal,
+        donorPhone: donorPhoneVal,
+        donorBloodGroup: donorBloodGroupVal,
+        donorEmail: savedUserObj.email || "",
         status: "pending"
       });
       localStorage.setItem("pendingDonations", JSON.stringify(pendingDonations));
@@ -98,12 +137,12 @@ export default function DonationForm() {
       donations.push({
         amount: donationAmount,
         date: banglaDate,
-        method: paymentMethods.find(p => p.id === paymentMethod)?.name || paymentMethod,
+        method: paymentMethodName,
         transactionId: transactionId,
         senderPhone: senderPhone,
-        donorName: isAnonymous ? "বেনামী" : name,
-        donorPhone: phone,
-        donorBloodGroup: bloodGroup,
+        donorName: donorNameVal,
+        donorPhone: donorPhoneVal,
+        donorBloodGroup: donorBloodGroupVal,
         status: "pending"
       });
       

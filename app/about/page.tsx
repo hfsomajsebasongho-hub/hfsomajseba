@@ -26,7 +26,7 @@ export default function AboutPage() {
             আমাদের সম্পর্কে
           </h1>
           <p className="text-xl text-blue-200 max-w-3xl mx-auto">
-            হিলফুল ফুজুল সমাজসেবা সংঘ সমাজের অসহায় ও দুঃস্থ মানুষদের সেবায় নিবেদিত
+            HF সমাজসেবা সংঘ সমাজের অসহায় ও দুঃস্থ মানুষদের সেবায় নিবেদিত
           </p>
         </div>
       </section>

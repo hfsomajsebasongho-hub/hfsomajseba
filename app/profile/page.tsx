@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import DonationReceipt from "../components/DonationReceipt";
+import DonationForm from "../components/DonationForm";
 
 // User data type
 interface Donation {
@@ -11,12 +13,22 @@ interface Donation {
   transactionId?: string;
   senderPhone?: string;
   status?: string;
+  receipt?: {
+    receiptNumber: string;
+    donorName: string;
+    amount: number;
+    paymentMethod: string;
+    transactionId: string;
+    senderPhone: string;
+    date: string;
+  };
 }
 
 interface UserData {
   name: string;
   email: string;
   phone: string;
+  address?: string;
   bloodGroup: string;
   totalDonation: number;
   donationCount: number;
@@ -28,6 +40,9 @@ export default function ProfilePage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLogin, setShowLogin] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<any>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [showDonateModal, setShowDonateModal] = useState(false);
   
   // Login form state
   const [loginEmail, setLoginEmail] = useState("");
@@ -37,12 +52,18 @@ export default function ProfilePage() {
   // Registration form state
   const [regName, setRegName] = useState("");
   const [regPhone, setRegPhone] = useState("");
+  const [regAddress, setRegAddress] = useState("");
   const [regBloodGroup, setRegBloodGroup] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regConfirmPassword, setRegConfirmPassword] = useState("");
   const [regError, setRegError] = useState("");
   const [regSuccess, setRegSuccess] = useState(false);
+
+  // Password visibility states
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
   // User data state
   const [userData, setUserData] = useState<UserData>({
@@ -65,6 +86,13 @@ export default function ProfilePage() {
 
   // Load user data from localStorage on mount and when page gets focus
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("mode") === "register" || params.get("tab") === "register") {
+        setShowLogin(false);
+      }
+    }
+
     const loadUserData = () => {
       const savedUser = localStorage.getItem("userData");
       const savedLoginStatus = localStorage.getItem("isLoggedIn");
@@ -81,6 +109,7 @@ export default function ProfilePage() {
             name: user.name,
             email: user.email,
             phone: user.phone,
+            address: user.address || "",
             bloodGroup: user.bloodGroup || "",
             joinDate: user.joinDate,
             totalDonation: user.totalDonation || 0,
@@ -94,6 +123,7 @@ export default function ProfilePage() {
             name: user.name,
             email: user.email,
             phone: user.phone,
+            address: user.address || allUsers[existingIndex].address || "",
             bloodGroup: user.bloodGroup || "",
             totalDonation: user.totalDonation || 0,
             donationCount: user.donationCount || 0,
@@ -127,8 +157,9 @@ export default function ProfilePage() {
     e.preventDefault();
     setLoginError("");
     
-    if (!loginEmail.trim()) {
-      setLoginError("ইমেইল বা মোবাইল নম্বর দিন");
+    const loginInput = loginEmail.trim();
+    if (!loginInput) {
+      setLoginError("মোবাইল নম্বর বা ইমেইল দিন");
       return;
     }
     if (!loginPassword) {
@@ -140,31 +171,42 @@ export default function ProfilePage() {
       return;
     }
     
-    // First check current userData
-    const savedUser = localStorage.getItem("userData");
-    if (savedUser) {
-      const user = JSON.parse(savedUser);
-      // Check if email or phone matches
-      if ((user.email === loginEmail || user.phone === loginEmail)) {
-        setUserData(user);
-        setIsLoggedIn(true);
-        localStorage.setItem("isLoggedIn", "true");
-        // Clear form
-        setLoginEmail("");
-        setLoginPassword("");
+    // 1. Check if user is in pendingUsers (not approved yet by Admin)
+    const pendingUsers = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
+    const pendingUser = pendingUsers.find(
+      (u: any) => u.phone === loginInput || (u.email && u.email !== "-" && u.email === loginInput)
+    );
+    
+    if (pendingUser) {
+      if (pendingUser.status === "pending") {
+        setLoginError("⏳ এপ্রুভের জন্য অপেক্ষা করুন। (এডমিন অনুমোদনের পর লগইন করতে পারবেন)");
+        return;
+      } else if (pendingUser.status === "rejected") {
+        setLoginError("❌ আপনার অ্যাকাউন্ট বাতিল করা হয়েছে। আমাদের সাথে যোগাযোগ করুন।");
         return;
       }
     }
     
-    // If not found in userData, check in allUsers
+    // 2. Check in allUsers if approved
     const allUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
-    const foundUser = allUsers.find((u: any) => u.email === loginEmail || u.phone === loginEmail);
+    const foundUser = allUsers.find(
+      (u: any) => u.phone === loginInput || (u.email && u.email !== "-" && u.email === loginInput)
+    );
     
     if (foundUser) {
+      // Check if user has pending status
+      const isPending = pendingUsers.some(
+        (u: any) => (u.phone === loginInput || (u.email && u.email !== "-" && u.email === loginInput)) && u.status === "pending"
+      );
+      if (isPending) {
+        setLoginError("⏳ এপ্রুভের জন্য অপেক্ষা করুন। (এডমিন অনুমোদনের পর লগইন করতে পারবেন)");
+        return;
+      }
+
       // Load user data from allUsers
       const userToLoad: UserData = {
         name: foundUser.name,
-        email: foundUser.email,
+        email: foundUser.email || "-",
         phone: foundUser.phone,
         bloodGroup: foundUser.bloodGroup || "",
         totalDonation: foundUser.totalDonation || 0,
@@ -181,7 +223,7 @@ export default function ProfilePage() {
       setLoginEmail("");
       setLoginPassword("");
     } else {
-      setLoginError("কোনো একাউন্ট পাওয়া যায়নি। প্রথমে রেজিস্টার করুন।");
+      setLoginError("⏳ এপ্রুভের জন্য অপেক্ষা করুন। (প্রথমে রেজিস্টার করুন এবং এডমিন অনুমোদনের পর লগইন করুন)");
     }
   };
 
@@ -204,20 +246,15 @@ export default function ProfilePage() {
       setRegError("সঠিক মোবাইল নম্বর দিন (যেমন: 01712345678)");
       return;
     }
+    if (!regAddress.trim()) {
+      setRegError("আপনার ঠিকানা দিন");
+      return;
+    }
     if (!regBloodGroup) {
       setRegError("রক্তের গ্রুপ নির্বাচন করুন");
       return;
     }
-    if (!regEmail.trim()) {
-      setRegError("ইমেইল দিন");
-      return;
-    }
-    // Validate email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(regEmail)) {
-      setRegError("সঠিক ইমেইল ঠিকানা দিন");
-      return;
-    }
+    const userEmail = regEmail.trim() || "-";
     if (!regPassword) {
       setRegError("পাসওয়ার্ড দিন");
       return;
@@ -239,42 +276,31 @@ export default function ProfilePage() {
       year: 'numeric' 
     });
     
-    const newUserData: UserData = {
-      name: regName,
-      email: regEmail,
-      phone: regPhone,
+    // Add to pendingUsers list (awaiting admin approval)
+    const pendingUsers = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
+    const existingPendingIndex = pendingUsers.findIndex((u: any) => u.phone === regPhone || (userEmail !== "-" && u.email === userEmail));
+    
+    const newPendingUser = {
+      name: regName.trim(),
+      email: userEmail,
+      phone: regPhone.trim(),
+      address: regAddress.trim(),
       bloodGroup: regBloodGroup,
-      totalDonation: 0,
-      donationCount: 0,
-      joinDate: banglaDate,
-      donations: [],
+      registrationDate: banglaDate,
+      status: "pending" as const,
     };
-    
-    // Save to localStorage
-    saveUserData(newUserData);
-    localStorage.setItem("isLoggedIn", "true");
-    
-    // Add to allUsers list
-    const allUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
-    // Check if user already exists (by email or phone)
-    const existingIndex = allUsers.findIndex((u: any) => u.email === regEmail || u.phone === regPhone);
-    if (existingIndex === -1) {
-      allUsers.push({
-        name: regName,
-        email: regEmail,
-        phone: regPhone,
-        bloodGroup: regBloodGroup,
-        joinDate: banglaDate,
-        totalDonation: 0,
-        donationCount: 0,
-      });
-      localStorage.setItem("allUsers", JSON.stringify(allUsers));
+
+    if (existingPendingIndex === -1) {
+      pendingUsers.push(newPendingUser);
+    } else {
+      pendingUsers[existingPendingIndex] = newPendingUser;
     }
+    localStorage.setItem("pendingUsers", JSON.stringify(pendingUsers));
     
     // Show success message
     setRegSuccess(true);
     
-    // Clear form and login
+    // Clear form but don't login yet - show pending message
     setTimeout(() => {
       setRegName("");
       setRegPhone("");
@@ -282,9 +308,9 @@ export default function ProfilePage() {
       setRegEmail("");
       setRegPassword("");
       setRegConfirmPassword("");
-      setIsLoggedIn(true);
+      setShowLogin(true);
       setRegSuccess(false);
-    }, 1500);
+    }, 2000);
   };
 
   // Handle Logout
@@ -384,23 +410,23 @@ export default function ProfilePage() {
 
   if (!isLoggedIn) {
     return (
-      <div className="bg-gray-50 min-h-screen py-16">
+      <div className="bg-gray-50 min-h-screen py-10">
         <div className="container mx-auto px-4">
-          <div className="max-w-md mx-auto">
+          <div className={`mx-auto transition-all duration-300 ${showLogin ? "max-w-md" : "max-w-xl"}`}>
             {/* Login/Register Toggle */}
-            <div className="flex bg-gray-200 rounded-full p-1 mb-8">
+            <div className="flex bg-gray-200 rounded-full p-1 mb-6">
               <button
                 onClick={() => setShowLogin(true)}
-                className={`flex-1 py-3 rounded-full font-bold transition-colors ${
-                  showLogin ? "bg-blue-600 text-white" : "text-gray-600"
+                className={`flex-1 py-2.5 rounded-full font-bold transition-colors text-sm ${
+                  showLogin ? "bg-blue-600 text-white shadow" : "text-gray-600"
                 }`}
               >
                 লগইন
               </button>
               <button
                 onClick={() => setShowLogin(false)}
-                className={`flex-1 py-3 rounded-full font-bold transition-colors ${
-                  !showLogin ? "bg-blue-600 text-white" : "text-gray-600"
+                className={`flex-1 py-2.5 rounded-full font-bold transition-colors text-sm ${
+                  !showLogin ? "bg-blue-600 text-white shadow" : "text-gray-600"
                 }`}
               >
                 রেজিস্টার
@@ -409,146 +435,230 @@ export default function ProfilePage() {
 
             {showLogin ? (
               /* Login Form */
-              <div className="bg-white rounded-2xl shadow-xl p-8">
-                <div className="text-center mb-8">
-                  <div className="text-5xl mb-4">👤</div>
-                  <h1 className="text-2xl font-bold text-blue-800">লগইন করুন</h1>
-                  <p className="text-gray-600">আপনার একাউন্টে প্রবেশ করুন</p>
+              <div className="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-gray-200">
+                <div className="text-center mb-6">
+                  <div className="text-4xl mb-2">👤</div>
+                  <h1 className="text-2xl font-extrabold text-blue-900">লগইন করুন</h1>
+                  <p className="text-gray-600 text-sm font-medium">আপনার একাউন্টে প্রবেশ করুন</p>
                 </div>
 
                 {loginError && (
-                  <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">
-                    ⚠️ {loginError}
+                  <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-2.5 rounded-xl mb-4 text-sm flex items-center gap-2 font-medium">
+                    <span>⚠️</span>
+                    <span>{loginError}</span>
                   </div>
                 )}
 
-                <form onSubmit={handleLogin}>
-                  <div className="mb-4">
-                    <label className="block text-gray-700 font-medium mb-2">ইমেইল / মোবাইল</label>
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className="block text-gray-900 text-sm font-bold mb-1.5">ইমেইল / মোবাইল</label>
                     <input
                       type="text"
                       placeholder="আপনার ইমেইল বা মোবাইল নম্বর"
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
+                      className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-gray-900 font-semibold text-sm transition-all placeholder:text-gray-400 placeholder:font-normal"
                     />
                   </div>
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-medium mb-2">পাসওয়ার্ড</label>
-                    <input
-                      type="password"
-                      placeholder="আপনার পাসওয়ার্ড"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                    />
+                  <div>
+                    <label className="block text-gray-900 text-sm font-bold mb-1.5">পাসওয়ার্ড</label>
+                    <div className="relative">
+                      <input
+                        type={showLoginPassword ? "text" : "password"}
+                        placeholder="আপনার পাসওয়ার্ড"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-gray-900 font-semibold text-sm transition-all placeholder:text-gray-400 placeholder:font-normal pr-11"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPassword(!showLoginPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 transition-colors cursor-pointer select-none"
+                        title={showLoginPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখুন"}
+                      >
+                        {showLoginPassword ? (
+                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5 text-gray-400 hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858-5.908a10.025 10.025 0 014.122-.963c4.478 0 8.268 2.943 9.543 7a9.97 9.97 0 01-2.555 4.14M9.88 9.88a3 3 0 104.243 4.243M3 3l18 18" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                   </div>
                   <button
                     type="submit"
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-lg transition-colors"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-md text-base cursor-pointer"
                   >
                     লগইন
                   </button>
                 </form>
 
-                <div className="text-center mt-6">
-                  <a href="#" className="text-blue-600 hover:underline">পাসওয়ার্ড ভুলে গেছেন?</a>
+                <div className="text-center mt-5">
+                  <a href="#" className="text-blue-600 hover:underline text-sm font-bold">পাসওয়ার্ড ভুলে গেছেন?</a>
                 </div>
               </div>
             ) : (
               /* Register Form */
-              <div className="bg-white rounded-2xl shadow-xl p-8">
-                <div className="text-center mb-8">
-                  <div className="text-5xl mb-4">📝</div>
-                  <h1 className="text-2xl font-bold text-blue-800">রেজিস্টার করুন</h1>
-                  <p className="text-gray-600">নতুন একাউন্ট তৈরি করুন</p>
+              <div className="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-gray-200">
+                <div className="text-center mb-6">
+                  <div className="text-4xl mb-2">📝</div>
+                  <h1 className="text-2xl font-extrabold text-blue-900">রেজিস্টার করুন</h1>
+                  <p className="text-gray-600 text-sm font-medium">নতুন একাউন্ট তৈরি করতে নিচের তথ্যগুলো পূরণ করুন</p>
                 </div>
 
                 {regError && (
-                  <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">
-                    ⚠️ {regError}
+                  <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-2.5 rounded-xl mb-4 text-sm flex items-center gap-2 font-medium">
+                    <span>⚠️</span>
+                    <span>{regError}</span>
                   </div>
                 )}
 
                 {regSuccess && (
-                  <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-4">
-                    ✅ রেজিস্ট্রেশন সফল হয়েছে! লগইন করা হচ্ছে...
+                  <div className="bg-blue-50 border border-blue-300 text-blue-800 px-4 py-3 rounded-xl mb-4 text-sm flex items-center gap-2 font-medium">
+                    <span>⏳</span>
+                    <span>রেজিস্ট্রেশন সফল হয়েছে! আপনার অ্যাকাউন্ট অনুমোদনের জন্য অপেক্ষমান।</span>
                   </div>
                 )}
 
-                <form onSubmit={handleRegister}>
-                  <div className="mb-4">
-                    <label className="block text-gray-700 font-medium mb-2">আপনার নাম <span className="text-red-500">*</span></label>
-                    <input
-                      type="text"
-                      placeholder="পুরো নাম"
-                      value={regName}
-                      onChange={(e) => setRegName(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                    />
+                <form onSubmit={handleRegister} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-gray-900 text-sm font-bold mb-1.5">
+                        আপনার নাম <span className="text-red-600 font-bold">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="পুরো নাম"
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-gray-900 font-semibold text-sm transition-all placeholder:text-gray-400 placeholder:font-normal"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-gray-900 text-sm font-bold mb-1.5">
+                        মোবাইল নম্বর <span className="text-red-600 font-bold">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="01XXXXXXXXX"
+                        value={regPhone}
+                        onChange={(e) => setRegPhone(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-gray-900 font-semibold text-sm transition-all placeholder:text-gray-400 placeholder:font-normal"
+                      />
+                    </div>
                   </div>
-                  <div className="mb-4">
-                    <label className="block text-gray-700 font-medium mb-2">মোবাইল নম্বর <span className="text-red-500">*</span></label>
-                    <input
-                      type="tel"
-                      placeholder="01XXXXXXXXX"
-                      value={regPhone}
-                      onChange={(e) => setRegPhone(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                    />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-gray-900 text-sm font-bold mb-1.5">
+                        ঠিকানা <span className="text-red-600 font-bold">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="যেমন: ঢাকা, বাংলাদেশ"
+                        value={regAddress}
+                        onChange={(e) => setRegAddress(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-gray-900 font-semibold text-sm transition-all placeholder:text-gray-400 placeholder:font-normal"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-gray-900 text-sm font-bold mb-1.5">
+                        রক্তের গ্রুপ <span className="text-red-600 font-bold">*</span>
+                      </label>
+                      <select
+                        value={regBloodGroup}
+                        onChange={(e) => setRegBloodGroup(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-gray-900 font-semibold text-sm transition-all cursor-pointer"
+                      >
+                        <option value="">বাছাই করুন</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                      </select>
+                    </div>
                   </div>
-                  <div className="mb-4">
-                    <label className="block text-gray-700 font-medium mb-2">রক্তের গ্রুপ <span className="text-red-500">*</span></label>
-                    <select
-                      value={regBloodGroup}
-                      onChange={(e) => setRegBloodGroup(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                    >
-                      <option value="">রক্তের গ্রুপ নির্বাচন করুন</option>
-                      <option value="O+">O+</option>
-                      <option value="O-">O-</option>
-                      <option value="A+">A+</option>
-                      <option value="A-">A-</option>
-                      <option value="B+">B+</option>
-                      <option value="B-">B-</option>
-                      <option value="AB+">AB+</option>
-                      <option value="AB-">AB-</option>
-                    </select>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-gray-900 text-sm font-bold mb-1.5">
+                        পাসওয়ার্ড <span className="text-red-600 font-bold">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showRegPassword ? "text" : "password"}
+                          placeholder="কমপক্ষে ৬ অক্ষর"
+                          value={regPassword}
+                          onChange={(e) => setRegPassword(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-gray-900 font-semibold text-sm transition-all placeholder:text-gray-400 placeholder:font-normal pr-11"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRegPassword(!showRegPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 transition-colors cursor-pointer select-none"
+                          title={showRegPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখুন"}
+                        >
+                          {showRegPassword ? (
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-5 h-5 text-gray-400 hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858-5.908a10.025 10.025 0 014.122-.963c4.478 0 8.268 2.943 9.543 7a9.97 9.97 0 01-2.555 4.14M9.88 9.88a3 3 0 104.243 4.243M3 3l18 18" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-gray-900 text-sm font-bold mb-1.5">
+                        পাসওয়ার্ড নিশ্চিত করুন <span className="text-red-600 font-bold">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showRegConfirmPassword ? "text" : "password"}
+                          placeholder="পুনরায় লিখুন"
+                          value={regConfirmPassword}
+                          onChange={(e) => setRegConfirmPassword(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 text-gray-900 font-semibold text-sm transition-all placeholder:text-gray-400 placeholder:font-normal pr-11"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 transition-colors cursor-pointer select-none"
+                          title={showRegConfirmPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখুন"}
+                        >
+                          {showRegConfirmPassword ? (
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-5 h-5 text-gray-400 hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858-5.908a10.025 10.025 0 014.122-.963c4.478 0 8.268 2.943 9.543 7a9.97 9.97 0 01-2.555 4.14M9.88 9.88a3 3 0 104.243 4.243M3 3l18 18" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mb-4">
-                    <label className="block text-gray-700 font-medium mb-2">ইমেইল <span className="text-red-500">*</span></label>
-                    <input
-                      type="email"
-                      placeholder="আপনার ইমেইল"
-                      value={regEmail}
-                      onChange={(e) => setRegEmail(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="mb-4">
-                    <label className="block text-gray-700 font-medium mb-2">পাসওয়ার্ড <span className="text-red-500">*</span></label>
-                    <input
-                      type="password"
-                      placeholder="পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)"
-                      value={regPassword}
-                      onChange={(e) => setRegPassword(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-medium mb-2">পাসওয়ার্ড নিশ্চিত করুন <span className="text-red-500">*</span></label>
-                    <input
-                      type="password"
-                      placeholder="পাসওয়ার্ড পুনরায় লিখুন"
-                      value={regConfirmPassword}
-                      onChange={(e) => setRegConfirmPassword(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
+
                   <button
                     type="submit"
                     disabled={regSuccess}
-                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-4 rounded-lg transition-colors"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white font-bold py-3.5 rounded-xl shadow-md transition-all text-base mt-3 cursor-pointer"
                   >
                     রেজিস্টার করুন
                   </button>
@@ -575,36 +685,28 @@ export default function ProfilePage() {
                 <h1 className="text-3xl font-bold mb-2">{userData.name}</h1>
                 <p className="text-blue-200">সদস্য থেকে: {userData.joinDate}</p>
               </div>
-              <button
-                onClick={handleLogout}
-                className="bg-red-500 hover:bg-red-600 px-6 py-2 rounded-full font-bold transition-colors"
-              >
-                লগআউট
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowDonateModal(true)}
+                  className="bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 hover:from-yellow-300 hover:to-amber-300 text-slate-950 font-black text-lg md:text-xl px-7 py-3 rounded-full transition-all duration-300 shadow-xl hover:shadow-2xl shadow-yellow-500/40 hover:scale-108 active:scale-95 flex items-center gap-2.5 cursor-pointer ring-4 ring-yellow-400/40"
+                >
+                  <span className="text-2xl animate-bounce">💝</span>
+                  <span>এখনই দান করুন</span>
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-full font-bold transition-colors text-sm md:text-base cursor-pointer"
+                >
+                  লগআউট
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white rounded-xl p-6 shadow-md text-center">
-              <div className="text-4xl mb-2">💰</div>
-              <p className="text-3xl font-bold text-green-600">৳ {userData.totalDonation.toLocaleString('bn-BD')}</p>
-              <p className="text-gray-600">মোট দান</p>
-            </div>
-            <div className="bg-white rounded-xl p-6 shadow-md text-center">
-              <div className="text-4xl mb-2">🎁</div>
-              <p className="text-3xl font-bold text-blue-600">{userData.donationCount}</p>
-              <p className="text-gray-600">দানের সংখ্যা</p>
-            </div>
-            <div className="bg-white rounded-xl p-6 shadow-md text-center">
-              <div className="text-4xl mb-2">⭐</div>
-              <p className="text-3xl font-bold text-yellow-600">গোল্ড</p>
-              <p className="text-gray-600">দাতা র‍্যাংক</p>
-            </div>
-          </div>
+
 
           {/* Profile Info */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+          <div className="mb-8">
             <div className="bg-white rounded-xl p-6 shadow-md">
               <h2 className="text-xl font-bold text-blue-800 mb-4 flex items-center gap-2">
                 <span>📋</span> প্রোফাইল তথ্য
@@ -681,14 +783,10 @@ export default function ProfilePage() {
               ) : (
                 // Display Info
                 <>
-                  <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-gray-500 text-sm">নাম</label>
                       <p className="font-medium">{userData.name || "সেট করা হয়নি"}</p>
-                    </div>
-                    <div>
-                      <label className="block text-gray-500 text-sm">ইমেইল</label>
-                      <p className="font-medium">{userData.email || "সেট করা হয়নি"}</p>
                     </div>
                     <div>
                       <label className="block text-gray-500 text-sm">মোবাইল</label>
@@ -716,38 +814,6 @@ export default function ProfilePage() {
                 </>
               )}
             </div>
-
-            <div className="bg-white rounded-xl p-6 shadow-md">
-              <h2 className="text-xl font-bold text-blue-800 mb-4 flex items-center gap-2">
-                <span>🏆</span> অর্জন
-              </h2>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-3xl mb-1">🥇</div>
-                  <p className="text-xs text-gray-600">প্রথম দান</p>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl mb-1">💎</div>
-                  <p className="text-xs text-gray-600">৫+ দান</p>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl mb-1">🌟</div>
-                  <p className="text-xs text-gray-600">২৫,০০০+ টাকা</p>
-                </div>
-                <div className="text-center opacity-30">
-                  <div className="text-3xl mb-1">👑</div>
-                  <p className="text-xs text-gray-600">১০+ দান</p>
-                </div>
-                <div className="text-center opacity-30">
-                  <div className="text-3xl mb-1">🎖️</div>
-                  <p className="text-xs text-gray-600">৫০,০০০+ টাকা</p>
-                </div>
-                <div className="text-center opacity-30">
-                  <div className="text-3xl mb-1">🏅</div>
-                  <p className="text-xs text-gray-600">১ বছর</p>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Donation History */}
@@ -756,9 +822,13 @@ export default function ProfilePage() {
               <h2 className="text-xl font-bold text-blue-800 flex items-center gap-2">
                 <span>📜</span> দানের ইতিহাস
               </h2>
-              <Link href="/donate" className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full text-sm font-bold transition-colors">
-                + নতুন দান
-              </Link>
+              <button
+                onClick={() => setShowDonateModal(true)}
+                className="bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 hover:from-yellow-300 hover:to-amber-300 text-slate-950 font-black text-base md:text-lg px-6 py-2.5 rounded-full transition-all duration-300 shadow-lg hover:shadow-xl shadow-yellow-500/30 hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer ring-2 ring-yellow-400/40"
+              >
+                <span className="text-xl">💝</span>
+                <span>এখনই দান করুন</span>
+              </button>
             </div>
             {userData.donations && userData.donations.length > 0 ? (
               <div className="overflow-x-auto">
@@ -770,6 +840,7 @@ export default function ProfilePage() {
                       <th className="text-left py-3 px-4 text-gray-600">মাধ্যম</th>
                       <th className="text-left py-3 px-4 text-gray-600">ট্রান্সজেকশন</th>
                       <th className="text-left py-3 px-4 text-gray-600">স্ট্যাটাস</th>
+                      <th className="text-center py-3 px-4 text-gray-600">অ্যাকশন</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -798,6 +869,21 @@ export default function ProfilePage() {
                             </span>
                           )}
                         </td>
+                        <td className="py-4 px-4 text-center">
+                          {donation.status === "approved" && donation.receipt ? (
+                            <button
+                              onClick={() => {
+                                setSelectedReceipt(donation.receipt);
+                                setShowReceipt(true);
+                              }}
+                              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-bold transition-colors"
+                            >
+                              🖨️ প্রিন্ট
+                            </button>
+                          ) : (
+                            <span className="text-gray-400 text-sm">-</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -816,6 +902,53 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Donation Receipt Modal */}
+      {selectedReceipt && (
+        <DonationReceipt
+          donorName={selectedReceipt.donorName}
+          amount={selectedReceipt.amount}
+          paymentMethod={selectedReceipt.paymentMethod}
+          transactionId={selectedReceipt.transactionId}
+          date={selectedReceipt.date}
+          senderPhone={selectedReceipt.senderPhone}
+          isOpen={showReceipt}
+          onClose={() => setShowReceipt(false)}
+        />
+      )}
+
+      {/* Donation Form Modal */}
+      {showDonateModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 md:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto border border-gray-100 my-8">
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center text-xl">
+                  💝
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-blue-900">দান করুন</h2>
+                  <p className="text-xs text-gray-500">আপনার সাহায্য একজন মানুষের জীবন বদলে দিতে পারে</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDonateModal(false);
+                  const savedUser = localStorage.getItem("userData");
+                  if (savedUser) {
+                    setUserData(JSON.parse(savedUser));
+                  }
+                }}
+                className="w-9 h-9 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <DonationForm />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -101,23 +101,7 @@ export default function DonorsPage() {
       }
     }
 
-    // Get all pending donations from other donors
-    const pendingDonations = localStorage.getItem("pendingDonations");
-    if (pendingDonations) {
-      const pending = JSON.parse(pendingDonations);
-      pending.forEach((d: any) => {
-        allDonations.push({
-          name: d.donorName === "বেনামী" ? "বেনামী দাতা" : d.donorName,
-          amount: d.amount,
-          date: d.date,
-          isAnonymous: d.donorName === "বেনামী",
-          phone: d.donorPhone || "",
-          joinDate: d.date,
-          bloodGroup: d.donorBloodGroup || "",
-        });
-        totalDonationAmount += d.amount;
-      });
-    }
+    // Group donations by donor name (only approved user donations and totalDonation stats)
 
     // Group donations by donor name
     allDonations.forEach((donation) => {
