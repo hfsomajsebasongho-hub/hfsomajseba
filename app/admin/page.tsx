@@ -106,6 +106,7 @@ export default function AdminPanel() {
   const [filterYear, setFilterYear] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
   const [filterDay, setFilterDay] = useState("");
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   
   const [totalStats, setTotalStats] = useState({
     totalUsers: 0,
@@ -1129,8 +1130,8 @@ export default function AdminPanel() {
     document.body.removeChild(link);
   };
 
-  // Export donations ledger to PDF / Print Report
-  const downloadPDF = () => {
+  // Export donations ledger to PDF / Print Report directly to device
+  const downloadPDF = async () => {
     if (allDonations.length === 0) {
       alert("ডাউনলোড করার মতো কোনো হিসাব পাওয়া যায়নি");
       return;
@@ -1173,125 +1174,166 @@ export default function AdminPanel() {
       return;
     }
 
-    const totalIncome = filteredLedger.reduce((sum, item) => sum + (item.incomeAmount || 0), 0);
-    const totalExpense = filteredLedger.reduce((sum, item) => sum + (item.expenseAmount || 0), 0);
-    const netBalance = totalIncome - totalExpense;
+    setIsGeneratingPDF(true);
 
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      alert("পপ-আপ উইন্ডো ব্লক করা আছে। অনুগ্রহ করে ব্রাউজারে পপ-আপ অনুমতি দিন।");
-      return;
-    }
+    try {
+      const totalIncome = filteredLedger.reduce((sum, item) => sum + (item.incomeAmount || 0), 0);
+      const totalExpense = filteredLedger.reduce((sum, item) => sum + (item.expenseAmount || 0), 0);
+      const netBalance = totalIncome - totalExpense;
+      const todayBn = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
 
-    const rowsHtml = filteredLedger.map((item, idx) => `
-      <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 0 ? 'background-color: #f9fafb;' : ''}">
-        <td style="padding: 10px; font-size: 13px; white-space: nowrap;">${item.date}</td>
-        <td style="padding: 10px; font-size: 13px; font-weight: 600;">${item.donorName}</td>
-        <td style="padding: 10px; font-size: 13px; color: #4b5563;">${item.phone || "-"}</td>
-        <td style="padding: 10px; font-size: 13px;">${item.method}</td>
-        <td style="padding: 10px; font-size: 13px; text-align: right; color: #16a34a; font-weight: bold; white-space: nowrap;">
-          ${item.incomeAmount > 0 ? "৳ " + item.incomeAmount.toLocaleString('bn-BD') : "-"}
-        </td>
-        <td style="padding: 10px; font-size: 13px; text-align: right; color: #dc2626; font-weight: bold; white-space: nowrap;">
-          ${item.expenseAmount > 0 ? "৳ " + item.expenseAmount.toLocaleString('bn-BD') : "-"}
-        </td>
-        <td style="padding: 10px; font-size: 12px; color: #6b7280;">${item.remarks || "-"}</td>
-      </tr>
-    `).join("");
-
-    const todayBn = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
-
-    const reportHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>আয়-ব্যয় ও দানের হিসাব - HF সমাজসেবা সংঘ</title>
-          <meta charset="utf-8" />
-          <style>
-            body { font-family: 'SolaimanLipi', 'Segoe UI', Arial, sans-serif; padding: 30px; color: #1f2937; line-height: 1.5; }
-            .header { text-align: center; border-bottom: 3px double #1e40af; padding-bottom: 15px; margin-bottom: 25px; }
-            .header h1 { margin: 0; color: #1e40af; font-size: 26px; }
-            .header p { margin: 4px 0 0 0; color: #4b5563; font-size: 14px; font-weight: 500; }
-            .summary-cards { display: flex; justify-content: space-between; margin-bottom: 25px; gap: 15px; }
-            .card { flex: 1; padding: 15px; border-radius: 10px; border: 1px solid #e5e7eb; text-align: center; }
-            .card-inc { background-color: #f0fdf4; border-color: #bbf7d0; color: #166534; }
-            .card-exp { background-color: #fef2f2; border-color: #fecaca; color: #991b1b; }
-            .card-bal { background-color: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
-            .card-title { font-size: 13px; font-weight: bold; }
-            .card-val { font-size: 22px; font-weight: 800; margin-top: 5px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th { background-color: #f3f4f6; padding: 12px 10px; text-align: left; font-size: 13px; border-bottom: 2px solid #9ca3af; color: #111827; }
-            tfoot tr td { padding: 14px 10px; font-weight: bold; font-size: 14px; background-color: #f3f4f6; border-top: 2px solid #6b7280; }
-            .print-btn { display: block; margin: 0 auto 20px auto; padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; }
-            @media print {
-              .print-btn { display: none; }
-              body { padding: 0; }
-              @page { margin: 1.5cm; }
+      // Load logo image as Base64 data URL for html2canvas
+      let logoDataUrl = "";
+      try {
+        logoDataUrl = await new Promise<string>((resolve) => {
+          const img = new Image();
+          img.crossOrigin = "Anonymous";
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              resolve(canvas.toDataURL("image/png"));
+            } else {
+              resolve("/hf_logo.png");
             }
-          </style>
-        </head>
-        <body>
-          <button class="print-btn" onclick="window.print()">🖨️ PDF সেভ বা প্রিন্ট করুন</button>
-          
-          <div class="header">
-            <h1>HF সমাজসেবা সংঘ</h1>
-            <p>আয়-ব্যয় ও দানের হিসাব (লেজার স্টেটমেন্ট)</p>
-            <p style="font-size: 12px; color: #6b7280; margin-top: 6px;">রিপোর্ট ডাউনলোডের তারিখ: ${todayBn}</p>
+          };
+          img.onerror = () => resolve("/hf_logo.png");
+          img.src = "/hf_logo.png";
+        });
+      } catch (e) {
+        logoDataUrl = "/hf_logo.png";
+      }
+
+      // Create printable off-screen DOM element
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.left = "-9999px";
+      container.style.top = "-9999px";
+      container.style.width = "800px";
+      container.style.backgroundColor = "#ffffff";
+      container.style.padding = "30px";
+      container.style.color = "#1f2937";
+      container.style.fontFamily = "'SolaimanLipi', 'Segoe UI', Arial, sans-serif";
+
+      const rowsHtml = filteredLedger.map((item, idx) => `
+        <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 0 ? 'background-color: #f9fafb;' : ''}">
+          <td style="padding: 10px; font-size: 12px; white-space: nowrap;">${item.date}</td>
+          <td style="padding: 10px; font-size: 12px; font-weight: 600; color: #111827;">${item.donorName}</td>
+          <td style="padding: 10px; font-size: 12px; color: #4b5563;">${item.phone || "-"}</td>
+          <td style="padding: 10px; font-size: 12px;">${item.method}</td>
+          <td style="padding: 10px; font-size: 12px; text-align: right; color: #16a34a; font-weight: bold; white-space: nowrap;">
+            ${item.incomeAmount > 0 ? "৳ " + item.incomeAmount.toLocaleString('bn-BD') : "-"}
+          </td>
+          <td style="padding: 10px; font-size: 12px; text-align: right; color: #dc2626; font-weight: bold; white-space: nowrap;">
+            ${item.expenseAmount > 0 ? "৳ " + item.expenseAmount.toLocaleString('bn-BD') : "-"}
+          </td>
+          <td style="padding: 10px; font-size: 11px; color: #6b7280;">${item.remarks || "-"}</td>
+        </tr>
+      `).join("");
+
+      container.innerHTML = `
+        <div style="text-align: center; border-bottom: 3px double #1e40af; padding-bottom: 15px; margin-bottom: 20px;">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px;">
+            ${logoDataUrl ? `<img src="${logoDataUrl}" style="width: 55px; height: 55px; object-fit: contain; border-radius: 50%;" />` : ''}
+            <h1 style="margin: 0; color: #1e40af; font-size: 24px; font-weight: bold;">HF সমাজসেবা সংঘ</h1>
           </div>
+          <p style="margin: 4px 0 0 0; color: #374151; font-size: 14px; font-weight: 600;">আয়-ব্যয় ও দানের হিসাব (লেজার স্টেটমেন্ট)</p>
+          <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">ডাউনলোডের তারিখ: ${todayBn}</p>
+        </div>
 
-          <div class="summary-cards">
-            <div class="card card-inc">
-              <div class="card-title">মোট আয়</div>
-              <div class="card-val">৳ ${totalIncome.toLocaleString('bn-BD')}</div>
-            </div>
-            <div class="card card-exp">
-              <div class="card-title">মোট ব্যয়</div>
-              <div class="card-val">৳ ${totalExpense.toLocaleString('bn-BD')}</div>
-            </div>
-            <div class="card card-bal">
-              <div class="card-title">অবশিষ্ট জের (নিট ব্যালেন্স)</div>
-              <div class="card-val" style="${netBalance < 0 ? 'color: #dc2626;' : 'color: #047857;'}">৳ ${netBalance.toLocaleString('bn-BD')}</div>
-            </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 20px; gap: 12px;">
+          <div style="flex: 1; padding: 12px; border-radius: 8px; background-color: #f0fdf4; border: 1px solid #bbf7d0; text-align: center;">
+            <div style="font-size: 12px; font-weight: bold; color: #166534;">মোট আয়</div>
+            <div style="font-size: 18px; font-weight: 800; color: #15803d; margin-top: 4px;">৳ ${totalIncome.toLocaleString('bn-BD')}</div>
           </div>
+          <div style="flex: 1; padding: 12px; border-radius: 8px; background-color: #fef2f2; border: 1px solid #fecaca; text-align: center;">
+            <div style="font-size: 12px; font-weight: bold; color: #991b1b;">মোট ব্যয়</div>
+            <div style="font-size: 18px; font-weight: 800; color: #b91c1c; margin-top: 4px;">৳ ${totalExpense.toLocaleString('bn-BD')}</div>
+          </div>
+          <div style="flex: 1; padding: 12px; border-radius: 8px; background-color: #eff6ff; border: 1px solid #bfdbfe; text-align: center;">
+            <div style="font-size: 12px; font-weight: bold; color: #1e40af;">অবশিষ্ট জের (নিট ব্যালেন্স)</div>
+            <div style="font-size: 18px; font-weight: 800; color: ${netBalance < 0 ? '#dc2626' : '#047857'}; margin-top: 4px;">৳ ${netBalance.toLocaleString('bn-BD')}</div>
+          </div>
+        </div>
 
-          <table>
-            <thead>
-              <tr>
-                <th>তারিখ</th>
-                <th>দাতার নাম / বিবরণ</th>
-                <th>মোবাইল নম্বর</th>
-                <th>পেমেন্ট পদ্ধতি</th>
-                <th style="text-align: right;">আয় (৳)</th>
-                <th style="text-align: right;">ব্যয় (৳)</th>
-                <th>রিমার্কস</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="4" style="text-align: right;">সর্বমোট:</td>
-                <td style="text-align: right; color: #16a34a;">৳ ${totalIncome.toLocaleString('bn-BD')}</td>
-                <td style="text-align: right; color: #dc2626;">৳ ${totalExpense.toLocaleString('bn-BD')}</td>
-                <td style="color: #1e40af;">জের: ৳ ${netBalance.toLocaleString('bn-BD')}</td>
-              </tr>
-            </tfoot>
-          </table>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">তারিখ</th>
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">দাতার নাম / বিবরণ</th>
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">মোবাইল</th>
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">পদ্ধতি</th>
+              <th style="padding: 10px; text-align: right; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #16a34a;">আয় (৳)</th>
+              <th style="padding: 10px; text-align: right; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #dc2626;">ব্যয় (৳)</th>
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">রিমার্কস</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+          <tfoot>
+            <tr style="background-color: #f3f4f6; font-weight: bold;">
+              <td colspan="4" style="padding: 12px 10px; text-align: right; font-size: 13px; border-top: 2px solid #6b7280;">সর্বমোট:</td>
+              <td style="padding: 12px 10px; text-align: right; font-size: 13px; color: #16a34a; border-top: 2px solid #6b7280;">৳ ${totalIncome.toLocaleString('bn-BD')}</td>
+              <td style="padding: 12px 10px; text-align: right; font-size: 13px; color: #dc2626; border-top: 2px solid #6b7280;">৳ ${totalExpense.toLocaleString('bn-BD')}</td>
+              <td style="padding: 12px 10px; font-size: 12px; color: #1e40af; border-top: 2px solid #6b7280;">জের: ৳ ${netBalance.toLocaleString('bn-BD')}</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
 
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 300);
-            };
-          </script>
-        </body>
-      </html>
-    `;
+      document.body.appendChild(container);
 
-    printWindow.document.write(reportHtml);
-    printWindow.document.close();
+      // Import html2canvas and jsPDF dynamically
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
+
+      document.body.removeChild(container);
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth - 20; // 10mm margins
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 10;
+
+      pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
+      heightLeft -= (pdfHeight - 20);
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + 10;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
+        heightLeft -= (pdfHeight - 20);
+      }
+
+      // Save PDF directly onto device
+      const fileName = `donations_ledger_${Date.now()}.pdf`;
+      pdf.save(fileName);
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      alert("PDF তৈরি করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   // Clear all registered users / members
@@ -1702,10 +1744,21 @@ export default function AdminPanel() {
                   </button>
                   <button
                     onClick={downloadPDF}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-lg shadow transition-colors flex items-center gap-2 text-sm"
-                    title="PDF ডকুমেন্ট ডাউনলোড/প্রিন্ট করুন"
+                    disabled={isGeneratingPDF}
+                    className={`${
+                      isGeneratingPDF ? "bg-blue-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 cursor-pointer"
+                    } text-white font-bold py-2.5 px-4 rounded-lg shadow transition-colors flex items-center gap-2 text-sm`}
+                    title="PDF ডকুমেন্ট সরাসরি ডিভাইসে ডাউনলোড করুন"
                   >
-                    <span>📄</span> PDF ডাউনলোড
+                    {isGeneratingPDF ? (
+                      <>
+                        <span className="animate-spin">⏳</span> PDF ফাইল তৈরি হচ্ছে...
+                      </>
+                    ) : (
+                      <>
+                        <span>📄</span> PDF ডাউনলোড
+                      </>
+                    )}
                   </button>
                   <button
                     onClick={() => {
