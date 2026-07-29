@@ -107,6 +107,16 @@ export default function AdminPanel() {
   const [filterMonth, setFilterMonth] = useState("");
   const [filterDay, setFilterDay] = useState("");
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  // Edit Ledger Item state
+  const [editingLedgerItem, setEditingLedgerItem] = useState<LedgerEntry | null>(null);
+  const [editLedgerName, setEditLedgerName] = useState("");
+  const [editLedgerPhone, setEditLedgerPhone] = useState("");
+  const [editLedgerMethod, setEditLedgerMethod] = useState("নগদ");
+  const [editLedgerAmount, setEditLedgerAmount] = useState("");
+  const [editLedgerType, setEditLedgerType] = useState<"income" | "expense">("income");
+  const [editLedgerDate, setEditLedgerDate] = useState("");
+  const [editLedgerRemarks, setEditLedgerRemarks] = useState("");
   
   const [totalStats, setTotalStats] = useState({
     totalUsers: 0,
@@ -347,6 +357,104 @@ export default function AdminPanel() {
 
   // Load all data from localStorage
   const loadAllData = () => {
+    // Auto-seed sample donation ledger and members if empty on fresh browser/device
+    if (typeof window !== "undefined" && localStorage.getItem("hasInitializedData") !== "true") {
+      let customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+      let currentUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
+
+      if (customEntries.length === 0) {
+        const todayDate = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
+        customEntries = [
+          {
+            id: "init-1",
+            timestamp: Date.now() - 86400000,
+            date: todayDate,
+            donorName: "মোঃ রফিকুল ইসলাম",
+            phone: "01711223344",
+            method: "বিকাশ",
+            type: "income",
+            incomeAmount: 5000,
+            expenseAmount: 0,
+            remarks: "মাসিক সাধারণ অনুদান",
+            isCustom: true,
+          },
+          {
+            id: "init-2",
+            timestamp: Date.now() - 86400000 * 3,
+            date: "১৫ মে ২০২৬",
+            donorName: "অফিস সামগ্রী ক্রয়",
+            phone: "-",
+            method: "নগদ",
+            type: "expense",
+            incomeAmount: 0,
+            expenseAmount: 1500,
+            remarks: "খাতা ও কলম খরিদ",
+            isCustom: true,
+          },
+          {
+            id: "init-3",
+            timestamp: Date.now() - 86400000 * 6,
+            date: "১০ মে ২০২৬",
+            donorName: "আব্দুল করিম",
+            phone: "01812345678",
+            method: "নগদ",
+            type: "income",
+            incomeAmount: 10000,
+            expenseAmount: 0,
+            remarks: "এককালীন বিশেষ দান",
+            isCustom: true,
+          }
+        ];
+        localStorage.setItem("customLedgerEntries", JSON.stringify(customEntries));
+      }
+
+      if (currentUsers.length === 0) {
+        currentUsers = [
+          {
+            name: "মোঃ রফিকুল ইসলাম",
+            email: "rafiq@gmail.com",
+            phone: "01711223344",
+            address: "ধানমন্ডি, ঢাকা",
+            bloodGroup: "O+",
+            totalDonation: 5000,
+            donationCount: 1,
+            joinDate: "১ মে ২০২৬",
+            donations: [
+              {
+                amount: 5000,
+                date: "২৫ মে ২০২৬",
+                method: "বিকাশ",
+                transactionId: "TRX-101",
+                status: "approved"
+              }
+            ]
+          },
+          {
+            name: "আব্দুল করিম",
+            email: "karim@gmail.com",
+            phone: "01812345678",
+            address: "মিরপুর, ঢাকা",
+            bloodGroup: "B+",
+            totalDonation: 10000,
+            donationCount: 1,
+            joinDate: "২ মে ২০২৬",
+            donations: [
+              {
+                amount: 10000,
+                date: "১০ মে ২০২৬",
+                method: "নগদ",
+                transactionId: "TRX-102",
+                status: "approved"
+              }
+            ]
+          }
+        ];
+        localStorage.setItem("allUsers", JSON.stringify(currentUsers));
+      }
+
+      localStorage.setItem("hasInitializedData", "true");
+    }
+
     // Load all users from allUsers
     let allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
     const pendingUsersList: PendingUser[] = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
@@ -533,15 +641,110 @@ export default function AdminPanel() {
     alert("আয়/ব্যয় হিসাব এন্ট্রি সফলভাবে সংরক্ষণ করা হয়েছে");
   };
 
-  // Delete custom ledger entry
-  const deleteCustomLedgerEntry = (id?: string) => {
-    if (!id) return;
-    if (window.confirm("এই আয়/ব্যয় এন্ট্রিটি মুছে ফেলতে চান?")) {
-      const existing = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
-      const updated = existing.filter((item: any) => item.id !== id);
-      localStorage.setItem("customLedgerEntries", JSON.stringify(updated));
+  // Delete any ledger item (custom or approved user donation)
+  const deleteLedgerItem = (item: LedgerEntry) => {
+    if (!item.id) return;
+    if (window.confirm(`আপনি কি "${item.donorName}"-এর এই হিসাবের এন্ট্রিটি মুছে ফেলতে চান?`)) {
+      // 1. Remove from customLedgerEntries if present
+      const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+      const updatedCustom = customEntries.filter((ce: any) => ce.id !== item.id && (!item.id || ce.transactionId !== item.id));
+      localStorage.setItem("customLedgerEntries", JSON.stringify(updatedCustom));
+
+      // 2. Remove/update in allUsers if present
+      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
+      let updatedAllUsers = allUsersData.map((u: UserData) => {
+        if (u.donations && Array.isArray(u.donations)) {
+          const filteredDons = u.donations.filter((d: any) => d.transactionId !== item.id);
+          const approvedDons = filteredDons.filter((d: any) => d.status === "approved");
+          return {
+            ...u,
+            donations: filteredDons,
+            totalDonation: approvedDons.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0),
+            donationCount: approvedDons.length,
+          };
+        }
+        return u;
+      });
+      localStorage.setItem("allUsers", JSON.stringify(updatedAllUsers));
+
       loadAllData();
+      alert("আয়/ব্যয় হিসাবের এন্ট্রিটি সফলভাবে মুছে দেওয়া হয়েছে।");
     }
+  };
+
+  // Open Edit Ledger Modal
+  const openEditLedgerModal = (item: LedgerEntry) => {
+    setEditingLedgerItem(item);
+    setEditLedgerName(item.donorName || "");
+    setEditLedgerPhone(item.phone && item.phone !== "-" ? item.phone : "");
+    setEditLedgerMethod(item.method || "নগদ");
+    setEditLedgerType(item.type || (item.expenseAmount > 0 ? "expense" : "income"));
+    setEditLedgerAmount(String(item.incomeAmount > 0 ? item.incomeAmount : item.expenseAmount));
+    setEditLedgerRemarks(item.remarks || "");
+    setEditLedgerDate(item.date || "");
+  };
+
+  // Close Edit Ledger Modal
+  const closeEditLedgerModal = () => {
+    setEditingLedgerItem(null);
+  };
+
+  // Save edited ledger entry
+  const saveEditedLedgerItem = () => {
+    if (!editingLedgerItem) return;
+    if (!editLedgerName.trim()) {
+      alert("নাম বা বিবরণ দিন");
+      return;
+    }
+    if (!editLedgerAmount || Number(editLedgerAmount) <= 0) {
+      alert("সঠিক টাকা পরিমাণ দিন");
+      return;
+    }
+
+    const amountNum = Number(editLedgerAmount);
+
+    const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+    let foundInCustom = false;
+
+    const updatedCustom = customEntries.map((ce: any) => {
+      if (ce.id === editingLedgerItem.id || (ce.transactionId && ce.transactionId === editingLedgerItem.id)) {
+        foundInCustom = true;
+        return {
+          ...ce,
+          donorName: editLedgerName.trim(),
+          phone: editLedgerPhone.trim() || "-",
+          method: editLedgerMethod,
+          type: editLedgerType,
+          incomeAmount: editLedgerType === "income" ? amountNum : 0,
+          expenseAmount: editLedgerType === "expense" ? amountNum : 0,
+          remarks: editLedgerRemarks.trim() || (editLedgerType === "income" ? "আয়" : "ব্যয়"),
+          date: editLedgerDate.trim() || ce.date,
+        };
+      }
+      return ce;
+    });
+
+    if (!foundInCustom) {
+      updatedCustom.push({
+        id: editingLedgerItem.id,
+        timestamp: Date.now(),
+        date: editLedgerDate.trim() || editingLedgerItem.date,
+        donorName: editLedgerName.trim(),
+        phone: editLedgerPhone.trim() || "-",
+        method: editLedgerMethod,
+        type: editLedgerType,
+        incomeAmount: editLedgerType === "income" ? amountNum : 0,
+        expenseAmount: editLedgerType === "expense" ? amountNum : 0,
+        remarks: editLedgerRemarks.trim() || (editLedgerType === "income" ? "আয়" : "ব্যয়"),
+        isCustom: true,
+      });
+    }
+
+    localStorage.setItem("customLedgerEntries", JSON.stringify(updatedCustom));
+
+    closeEditLedgerModal();
+    loadAllData();
+    alert("আয়/ব্যয় হিসাব এন্ট্রি সফলভাবে আপডেট করা হয়েছে");
   };
 
   // Approve pending user
@@ -1841,12 +2044,13 @@ export default function AdminPanel() {
                           <thead className="bg-gray-100 border-b border-gray-200 text-gray-800">
                             <tr>
                               <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">তারিখ</th>
-                              <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">দাতার নাম</th>
+                              <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">দাতার নাম / বিবরণ</th>
                               <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">মোবাইল নাম্বার</th>
                               <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">পেমেন্ট পদ্ধতি</th>
                               <th className="py-3.5 px-4 font-bold text-green-700 border-r border-gray-200 text-right">আয়</th>
                               <th className="py-3.5 px-4 font-bold text-red-700 border-r border-gray-200 text-right">ব্যয়</th>
-                              <th className="py-3.5 px-4 font-bold text-gray-800">রিমার্কস</th>
+                              <th className="py-3.5 px-4 font-bold text-gray-800 border-r border-gray-200">রিমার্কস</th>
+                              <th className="py-3.5 px-4 font-bold text-gray-800 text-center">অ্যাকশন</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1866,7 +2070,23 @@ export default function AdminPanel() {
                                 <td className="py-3 px-4 text-right font-bold text-red-600 border-r border-gray-100 whitespace-nowrap">
                                   {item.expenseAmount > 0 ? `৳ ${item.expenseAmount.toLocaleString('bn-BD')}` : "-"}
                                 </td>
-                                <td className="py-3 px-4 text-gray-600 text-sm">{item.remarks || "-"}</td>
+                                <td className="py-3 px-4 text-gray-600 text-sm border-r border-gray-100">{item.remarks || "-"}</td>
+                                <td className="py-3 px-4 text-center whitespace-nowrap space-x-2">
+                                  <button
+                                    onClick={() => openEditLedgerModal(item)}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded transition-colors font-bold cursor-pointer"
+                                    title="এন্ট্রি এডিট করুন"
+                                  >
+                                    এডিট
+                                  </button>
+                                  <button
+                                    onClick={() => deleteLedgerItem(item)}
+                                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1 rounded transition-colors font-bold cursor-pointer"
+                                    title="এন্ট্রি মুছে ফেলুন"
+                                  >
+                                    মুছুন
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -1881,7 +2101,7 @@ export default function AdminPanel() {
                               <td className="py-4 px-4 text-right font-bold text-red-700 text-base border-r border-gray-200 whitespace-nowrap">
                                 ৳ {totalExpense.toLocaleString('bn-BD')}
                               </td>
-                              <td className="py-4 px-4 text-left font-bold text-blue-900 text-base whitespace-nowrap">
+                              <td colSpan={2} className="py-4 px-4 text-left font-bold text-blue-900 text-base whitespace-nowrap">
                                 অবশিষ্ট জের:{" "}
                                 <span className={netBalance >= 0 ? "text-emerald-700 font-extrabold" : "text-red-700 font-extrabold"}>
                                   ৳ {netBalance.toLocaleString('bn-BD')}
@@ -1992,6 +2212,155 @@ export default function AdminPanel() {
                 >
                   সংরক্ষণ করুন
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Ledger Entry Modal */}
+        {editingLedgerItem && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-gray-100 max-h-[90vh] overflow-hidden flex flex-col transform transition-all">
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white p-4 px-5 flex justify-between items-center relative">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-white/15 backdrop-blur-md rounded-xl flex items-center justify-center text-lg shadow-inner border border-white/20">
+                    ✏️
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white tracking-wide">
+                      আয়/ব্যয় হিসাব এডিট করুন
+                    </h3>
+                    <p className="text-xs text-blue-200 mt-0.5">তথ্য পরিবর্তন করুন</p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeEditLedgerModal}
+                  className="text-white/70 hover:text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 overflow-y-auto space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">এন্ট্রি টাইপ</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditLedgerType("income")}
+                      className={`py-2 px-3 rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+                        editLedgerType === "income"
+                          ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      <span>💚</span> আয় (Income)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditLedgerType("expense")}
+                      className={`py-2 px-3 rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+                        editLedgerType === "expense"
+                          ? "bg-red-600 text-white shadow-md shadow-red-600/30"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      <span>❤️</span> ব্যয় (Expense)
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    {editLedgerType === "income" ? "দাতার নাম / বিবরণ *" : "ব্যয়ের বিবরণ / গ্রহীতার নাম *"}
+                  </label>
+                  <input
+                    type="text"
+                    value={editLedgerName}
+                    onChange={(e) => setEditLedgerName(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">টাকা (পরিমাণ ৳) *</label>
+                    <input
+                      type="number"
+                      value={editLedgerAmount}
+                      onChange={(e) => setEditLedgerAmount(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all font-bold text-gray-800"
+                      min="1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">মোবাইল (ঐচ্ছিক)</label>
+                    <input
+                      type="text"
+                      value={editLedgerPhone}
+                      onChange={(e) => setEditLedgerPhone(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">পেমেন্ট পদ্ধতি</label>
+                    <select
+                      value={editLedgerMethod}
+                      onChange={(e) => setEditLedgerMethod(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all text-gray-800"
+                    >
+                      <option value="নগদ">নগদ</option>
+                      <option value="বিকাশ">বিকাশ</option>
+                      <option value="রকেট">রকেট</option>
+                      <option value="ব্যাংক">ব্যাংক</option>
+                      <option value="অন্যান্য">অন্যান্য</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">তারিখ</label>
+                    <input
+                      type="text"
+                      value={editLedgerDate}
+                      onChange={(e) => setEditLedgerDate(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all font-medium text-gray-800"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">রিমার্কস (মন্তব্য)</label>
+                  <input
+                    type="text"
+                    value={editLedgerRemarks}
+                    onChange={(e) => setEditLedgerRemarks(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-gray-50/50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm transition-all"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-3 border-t border-gray-100 mt-4">
+                  <button
+                    type="button"
+                    onClick={closeEditLedgerModal}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-all text-sm cursor-pointer"
+                  >
+                    বাতিল
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveEditedLedgerItem}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow-md shadow-blue-600/30 transition-all text-sm cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>💾</span>
+                    <span>আপডেট করুন</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

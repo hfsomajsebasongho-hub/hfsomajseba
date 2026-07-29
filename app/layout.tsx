@@ -23,6 +23,11 @@ const notoSerifBengali = Noto_Serif_Bengali({
 export const metadata: Metadata = {
   title: "HF সমাজসেবা সংঘ",
   description: "সমাজের অসহায় ও দুঃস্থ মানুষদের পাশে দাঁড়ানোর জন্য আমাদের সংগঠন",
+  icons: {
+    icon: "/hf_logo.png",
+    shortcut: "/hf_logo.png",
+    apple: "/hf_logo.png",
+  },
 };
 
 export default function RootLayout({
