@@ -137,49 +137,96 @@ export default function ProfilePage() {
     alert("আপনার আয়-ব্যয় হিসাব দেখার অনুরোধটি এডমিন প্যানেলে সফলভাবে পাঠানো হয়েছে। এডমিন অনুমোদন করলে আপনি সরাসরি PDF রিপোর্ট ডাউনলোড করে দেখতে পারবেন।");
   };
 
-  // Download Income & Expense PDF Statement
+  // Helper to parse Bengali date string to timestamp for sorting
+  const parseBengaliDateToTimestamp = (dateStr: string, fallbackId?: string): number => {
+    if (!dateStr) return 0;
+    const banglaDigits: Record<string, string> = {
+      '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4',
+      '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9'
+    };
+    let englishStr = dateStr.replace(/[০-৯]/g, (w) => banglaDigits[w]);
+
+    const monthsMap: Record<string, string> = {
+      'জানুয়ারি': 'January', 'জানুয়ারী': 'January',
+      'ফেব্রুয়ারি': 'February', 'ফেব্রুয়ারী': 'February',
+      'মার্চ': 'March', 'এপ্রিল': 'April', 'মে': 'May',
+      'জুন': 'June', 'জুলাই': 'July', 'আগস্ট': 'August',
+      'সেপ্টেম্বর': 'September', 'অক্টোবর': 'October',
+      'নভেম্বর': 'November', 'ডিসেম্বর': 'December'
+    };
+
+    Object.entries(monthsMap).forEach(([bn, en]) => {
+      englishStr = englishStr.replace(bn, en);
+    });
+
+    const parsed = new Date(englishStr).getTime();
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  // Download Income & Expense PDF Statement (100% Identical Format to Admin Panel PDF)
   const downloadUserLedgerPDF = async () => {
     setIsGeneratingPdf(true);
     try {
       const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
       const allUsersData = JSON.parse(localStorage.getItem("allUsers") || "[]");
+      const savedUserStr = localStorage.getItem("userData");
+      const savedUserObj = savedUserStr ? JSON.parse(savedUserStr) : null;
 
       const combinedLedger: any[] = [];
       const processedIds = new Set<string>();
 
+      // 1. Custom entries (Income & Expense)
       customEntries.forEach((ce: any) => {
-        const idKey = ce.id || ce.transactionId || `custom-${ce.date}-${ce.donorName}`;
-        if (!processedIds.has(idKey)) {
-          processedIds.add(idKey);
+        let cleanRemarks = ce.remarks || "-";
+        if (typeof cleanRemarks === "string") {
+          cleanRemarks = cleanRemarks.replace(/\s*\(TrxID:.*?\)/gi, "").trim();
+        }
+
+        const entryId = ce.id || `custom-${ce.donorName}-${ce.date}-${ce.incomeAmount || ce.expenseAmount}`;
+        if (!processedIds.has(entryId)) {
+          processedIds.add(entryId);
+          if (ce.transactionId) processedIds.add(ce.transactionId);
           combinedLedger.push({
+            id: entryId,
+            timestamp: ce.timestamp || parseBengaliDateToTimestamp(ce.date, entryId),
             date: ce.date || "",
-            donorName: ce.donorName || "অজানা",
+            donorName: ce.donorName || "-",
             phone: ce.phone || "-",
-            method: ce.method || "নগদ",
+            method: ce.method || "-",
+            type: ce.type || (ce.expenseAmount > 0 ? "expense" : "income"),
             incomeAmount: Number(ce.incomeAmount) || 0,
             expenseAmount: Number(ce.expenseAmount) || 0,
-            remarks: ce.remarks || "-",
-            timestamp: ce.timestamp || 0
+            remarks: cleanRemarks || "অনুমোদিত দান",
           });
         }
       });
 
-      allUsersData.forEach((u: any) => {
-        if (u.donations && Array.isArray(u.donations)) {
-          u.donations.forEach((d: any) => {
-            if (d.status === "approved") {
-              const txId = d.transactionId || `approved-${u.phone}-${d.date}-${d.amount}`;
-              if (!processedIds.has(txId)) {
+      // 2. Approved User donations from allUsers & current user
+      const allUsersToScan = [...allUsersData];
+      if (savedUserObj && !allUsersToScan.some((u: any) => (u.phone && u.phone === savedUserObj.phone) || (u.email && u.email !== "-" && u.email === savedUserObj.email))) {
+        allUsersToScan.push(savedUserObj);
+      }
+
+      allUsersToScan.forEach((user: any) => {
+        if (user.donations && Array.isArray(user.donations)) {
+          user.donations.forEach((donation: any) => {
+            if (donation.status === "approved") {
+              const txId = donation.transactionId || `approved-${user.phone || user.name}-${donation.date}-${donation.amount}`;
+              const ledgerId = `ledger-appr-${txId}`;
+              if (!processedIds.has(txId) && !processedIds.has(ledgerId)) {
                 processedIds.add(txId);
+                processedIds.add(ledgerId);
                 combinedLedger.push({
-                  date: d.date || "",
-                  donorName: u.name || "দানকারী",
-                  phone: u.phone || "-",
-                  method: d.method || "অন্যান্য",
-                  incomeAmount: Number(d.amount) || 0,
+                  id: txId,
+                  timestamp: donation.timestamp || parseBengaliDateToTimestamp(donation.date, txId),
+                  date: donation.date || "",
+                  donorName: user.name || "অজানা",
+                  phone: user.phone || "-",
+                  method: donation.method || "অন্যান্য",
+                  type: "income",
+                  incomeAmount: Number(donation.amount) || 0,
                   expenseAmount: 0,
                   remarks: "অনুমোদিত দান",
-                  timestamp: d.timestamp || 0
                 });
               }
             }
@@ -187,18 +234,46 @@ export default function ProfilePage() {
         }
       });
 
+      // Sort descending by timestamp
+      combinedLedger.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
       if (combinedLedger.length === 0) {
         alert("বর্তমানে ডাউনলোড করার মতো কোনো আয়/ব্যয় হিসাব পাওয়া যায়নি");
         setIsGeneratingPdf(false);
         return;
       }
 
-      const totalIncome = combinedLedger.reduce((sum, item) => sum + item.incomeAmount, 0);
-      const totalExpense = combinedLedger.reduce((sum, item) => sum + item.expenseAmount, 0);
+      const totalIncome = combinedLedger.reduce((sum, item) => sum + (item.incomeAmount || 0), 0);
+      const totalExpense = combinedLedger.reduce((sum, item) => sum + (item.expenseAmount || 0), 0);
       const netBalance = totalIncome - totalExpense;
       const todayBn = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
 
-      // Create printable off-screen DOM element
+      // Load logo image as Base64 data URL for html2canvas (identical to Admin Panel)
+      let logoDataUrl = "";
+      try {
+        logoDataUrl = await new Promise<string>((resolve) => {
+          const img = new Image();
+          img.crossOrigin = "Anonymous";
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              resolve(canvas.toDataURL("image/png"));
+            } else {
+              resolve("/hf_logo.png");
+            }
+          };
+          img.onerror = () => resolve("/hf_logo.png");
+          img.src = "/hf_logo.png";
+        });
+      } catch (e) {
+        logoDataUrl = "/hf_logo.png";
+      }
+
+      // Create printable off-screen DOM element (100% Identical HTML/CSS to Admin Panel)
       const container = document.createElement("div");
       container.style.position = "fixed";
       container.style.left = "-9999px";
@@ -213,23 +288,26 @@ export default function ProfilePage() {
         <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 0 ? 'background-color: #f9fafb;' : ''}">
           <td style="padding: 10px; font-size: 12px; white-space: nowrap;">${item.date}</td>
           <td style="padding: 10px; font-size: 12px; font-weight: 600; color: #111827;">${item.donorName}</td>
-          <td style="padding: 10px; font-size: 12px; color: #4b5563;">${item.phone}</td>
+          <td style="padding: 10px; font-size: 12px; color: #4b5563;">${item.phone || "-"}</td>
           <td style="padding: 10px; font-size: 12px;">${item.method}</td>
-          <td style="padding: 10px; font-size: 12px; text-align: right; color: #16a34a; font-weight: bold;">
+          <td style="padding: 10px; font-size: 12px; text-align: right; color: #16a34a; font-weight: bold; white-space: nowrap;">
             ${item.incomeAmount > 0 ? "৳ " + item.incomeAmount.toLocaleString('bn-BD') : "-"}
           </td>
-          <td style="padding: 10px; font-size: 12px; text-align: right; color: #dc2626; font-weight: bold;">
+          <td style="padding: 10px; font-size: 12px; text-align: right; color: #dc2626; font-weight: bold; white-space: nowrap;">
             ${item.expenseAmount > 0 ? "৳ " + item.expenseAmount.toLocaleString('bn-BD') : "-"}
           </td>
-          <td style="padding: 10px; font-size: 11px; color: #6b7280;">${item.remarks}</td>
+          <td style="padding: 10px; font-size: 11px; color: #6b7280;">${item.remarks || "-"}</td>
         </tr>
       `).join("");
 
       container.innerHTML = `
         <div style="text-align: center; border-bottom: 3px double #1e40af; padding-bottom: 15px; margin-bottom: 20px;">
-          <h1 style="margin: 0; color: #1e40af; font-size: 24px; font-weight: bold;">HF সমাজসেবা সংঘ</h1>
-          <p style="margin: 4px 0 0 0; color: #374151; font-size: 14px; font-weight: 600;">আয়-ব্যয় ও লেজার হিসাব বিবরণী</p>
-          <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">ইস্যুর তারিখ: ${todayBn} | আবেদনকারী: ${userData.name}</p>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px;">
+            ${logoDataUrl ? `<img src="${logoDataUrl}" style="width: 55px; height: 55px; object-fit: contain; border-radius: 50%;" />` : ''}
+            <h1 style="margin: 0; color: #1e40af; font-size: 24px; font-weight: bold;">HF সমাজসেবা সংঘ</h1>
+          </div>
+          <p style="margin: 4px 0 0 0; color: #374151; font-size: 14px; font-weight: 600;">আয়-ব্যয় ও দানের হিসাব (লেজার স্টেটমেন্ট)</p>
+          <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">ডাউনলোডের তারিখ: ${todayBn} | আবেদনকারী: ${userData.name || "সদস্য"}</p>
         </div>
 
         <div style="display: flex; justify-content: space-between; margin-bottom: 20px; gap: 12px;">
@@ -242,7 +320,7 @@ export default function ProfilePage() {
             <div style="font-size: 18px; font-weight: 800; color: #b91c1c; margin-top: 4px;">৳ ${totalExpense.toLocaleString('bn-BD')}</div>
           </div>
           <div style="flex: 1; padding: 12px; border-radius: 8px; background-color: #eff6ff; border: 1px solid #bfdbfe; text-align: center;">
-            <div style="font-size: 12px; font-weight: bold; color: #1e40af;">অবশিষ্ট জের</div>
+            <div style="font-size: 12px; font-weight: bold; color: #1e40af;">অবশিষ্ট জের (নিট ব্যালেন্স)</div>
             <div style="font-size: 18px; font-weight: 800; color: ${netBalance < 0 ? '#dc2626' : '#047857'}; margin-top: 4px;">৳ ${netBalance.toLocaleString('bn-BD')}</div>
           </div>
         </div>
@@ -251,7 +329,7 @@ export default function ProfilePage() {
           <thead>
             <tr style="background-color: #f3f4f6;">
               <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">তারিখ</th>
-              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">বিবরণ / দাতা</th>
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">দাতার নাম / বিবরণ</th>
               <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">মোবাইল</th>
               <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">পদ্ধতি</th>
               <th style="padding: 10px; text-align: right; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #16a34a;">আয় (৳)</th>
@@ -262,6 +340,14 @@ export default function ProfilePage() {
           <tbody>
             ${rowsHtml}
           </tbody>
+          <tfoot>
+            <tr style="background-color: #f3f4f6; font-weight: bold;">
+              <td colspan="4" style="padding: 12px 10px; text-align: right; font-size: 13px; border-top: 2px solid #6b7280;">সর্বমোট:</td>
+              <td style="padding: 12px 10px; text-align: right; font-size: 13px; color: #16a34a; border-top: 2px solid #6b7280;">৳ ${totalIncome.toLocaleString('bn-BD')}</td>
+              <td style="padding: 12px 10px; text-align: right; font-size: 13px; color: #dc2626; border-top: 2px solid #6b7280;">৳ ${totalExpense.toLocaleString('bn-BD')}</td>
+              <td style="padding: 12px 10px; font-size: 12px; color: #1e40af; border-top: 2px solid #6b7280;">জের: ৳ ${netBalance.toLocaleString('bn-BD')}</td>
+            </tr>
+          </tfoot>
         </table>
       `;
 
