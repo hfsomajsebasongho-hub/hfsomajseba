@@ -141,28 +141,48 @@ export default function AdminPanel() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const DEFAULT_ADMIN_ACCOUNTS = [
-    { username: "mdtarek48", password: "112233" },
-    { username: "admin", password: "123456" },
-    { username: "admin", password: "admin@123" },
+    { username: "admin", password: "129430" },
+    { username: "admin", password: "13579" },
   ];
+
+  // Helper to secure credentials stored in LocalStorage from plain-text DevTools/Inspect viewing
+  const encodeSecret = (str: string) => {
+    try {
+      return btoa(encodeURIComponent(str));
+    } catch {
+      return str;
+    }
+  };
+
+  const decodeSecret = (str: string) => {
+    try {
+      return decodeURIComponent(atob(str));
+    } catch {
+      return str;
+    }
+  };
 
   const getAdminAccounts = () => {
     if (typeof window === "undefined") return DEFAULT_ADMIN_ACCOUNTS;
-    const saved = localStorage.getItem("adminAccounts");
+    const saved = localStorage.getItem("adminAccounts_sec");
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
+        const decoded = decodeSecret(saved);
+        const parsed = JSON.parse(decoded);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (e) {
         // Fallback to default
       }
     }
+    // Remove legacy unencrypted adminAccounts key
+    localStorage.removeItem("adminAccounts");
     return DEFAULT_ADMIN_ACCOUNTS;
   };
 
   // Check admin login status on component mount
   useEffect(() => {
     const checkAdminLoginStatus = () => {
+      localStorage.removeItem("adminAccounts");
       const savedAdminLoginStatus = localStorage.getItem("isAdminLoggedIn");
       if (savedAdminLoginStatus === "true") {
         setIsAdminLoggedIn(true);
@@ -296,7 +316,8 @@ export default function AdminPanel() {
       currentAccounts.push({ username: activeUsername, password: newPasswordInput });
     }
 
-    localStorage.setItem("adminAccounts", JSON.stringify(currentAccounts));
+    localStorage.setItem("adminAccounts_sec", encodeSecret(JSON.stringify(currentAccounts)));
+    localStorage.removeItem("adminAccounts");
     
     setPasswordSuccess("পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে!");
     setTimeout(() => {
@@ -1840,19 +1861,21 @@ export default function AdminPanel() {
                             অপেক্ষমাণ
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-center space-x-2">
-                          <button
-                            onClick={() => approvePendingDonation(index)}
-                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm transition-colors"
-                          >
-                            এপ্রুভ
-                          </button>
-                          <button
-                            onClick={() => rejectPendingDonation(index)}
-                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition-colors"
-                          >
-                            বাতিল
-                          </button>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => approvePendingDonation(index)}
+                              className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                            >
+                              এপ্রুভ
+                            </button>
+                            <button
+                              onClick={() => rejectPendingDonation(index)}
+                              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                            >
+                              বাতিল
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1901,19 +1924,21 @@ export default function AdminPanel() {
                             পেন্ডিং
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-center space-x-2">
-                          <button
-                            onClick={() => approvePendingUser(user.email)}
-                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm transition-colors"
-                          >
-                            এপ্রুভ করুন
-                          </button>
-                          <button
-                            onClick={() => rejectPendingUser(user.email)}
-                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition-colors"
-                          >
-                            বাতিল করুন
-                          </button>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => approvePendingUser(user.email)}
+                              className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                            >
+                              এপ্রুভ করুন
+                            </button>
+                            <button
+                              onClick={() => rejectPendingUser(user.email)}
+                              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                            >
+                              বাতিল করুন
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
