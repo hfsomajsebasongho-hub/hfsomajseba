@@ -11,8 +11,12 @@ export default function Footer() {
           {/* About Section */}
           <div className="col-span-1 md:col-span-2">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg border-2 border-yellow-400">
-                <span className="text-2xl">🤝</span>
+              <div className="w-12 h-12 bg-white rounded-full p-0.5 flex items-center justify-center shadow-lg border-2 border-yellow-400 overflow-hidden flex-shrink-0">
+                <img
+                  src="/hf_logo.png"
+                  alt="HF সমাজসেবা সংঘ লোগো"
+                  className="w-full h-full object-contain rounded-full"
+                />
               </div>
               <div>
                 <h3 className="text-2xl font-extrabold text-white tracking-wide">HF সমাজসেবা সংঘ</h3>
@@ -89,11 +93,11 @@ export default function Footer() {
               </li>
               <li className="flex items-center gap-3">
                 <span className="text-yellow-300 text-lg">📞</span>
-                <span>+880 1XXX-XXXXXX</span>
+                <a href="tel:01979236232" className="hover:text-yellow-300 transition-colors">01979236232</a>
               </li>
               <li className="flex items-center gap-3">
                 <span className="text-yellow-300 text-lg">📧</span>
-                <span>info@hfsomajseba.org</span>
+                <a href="mailto:contact@hfsomajseba.com" className="hover:text-yellow-300 transition-colors">contact@hfsomajseba.com</a>
               </li>
             </ul>
           </div>
