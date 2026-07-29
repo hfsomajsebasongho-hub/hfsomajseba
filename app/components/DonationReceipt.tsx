@@ -81,9 +81,7 @@ export default function DonationReceipt({
         ctx.textAlign = "center";
         ctx.fillText("🤝", width / 2, 40);
         ctx.font = "bold 14px Arial";
-        ctx.fillText("হিলফুল ফুজুল", width / 2, 62);
-        ctx.font = "10px Arial";
-        ctx.fillText("সমাজসেবা সংঘ", width / 2, 78);
+        ctx.fillText("HF সমাজসেবা সংঘ", width / 2, 62);
 
         ctx.font = "bold 12px Arial";
         ctx.fillStyle = "#4ade80";

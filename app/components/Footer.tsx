@@ -87,7 +87,7 @@ export default function Footer() {
               </li>
               <li className="flex items-center gap-3">
                 <span className="text-yellow-300 text-lg">📧</span>
-                <span>info@hilfulfuzul.org</span>
+                <span>info@hfsomajseba.org</span>
               </li>
             </ul>
           </div>
@@ -95,7 +95,7 @@ export default function Footer() {
 
         {/* Copyright */}
         <div className="border-t border-slate-700/80 mt-10 pt-6 text-center text-gray-200 font-medium text-sm">
-          <p>© ২০২৬ হিলফুল ফুজুল সমাজসেবা সংঘ। সর্বস্বত্ব সংরক্ষিত।</p>
+          <p>© ২০২৬ HF সমাজসেবা সংঘ। সর্বস্বত্ব সংরক্ষিত।</p>
         </div>
       </div>
     </footer>
