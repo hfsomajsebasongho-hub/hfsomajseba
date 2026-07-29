@@ -62,6 +62,16 @@ interface LedgerEntry {
   isCustom?: boolean;
 }
 
+interface LedgerRequest {
+  id: string;
+  requesterName: string;
+  phone: string;
+  email?: string;
+  requestDate: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+}
+
 export default function AdminPanel() {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminUsername, setAdminUsername] = useState("");
@@ -81,6 +91,15 @@ export default function AdminPanel() {
   const [manualDonationAmount, setManualDonationAmount] = useState("");
   const [manualDonationDate, setManualDonationDate] = useState("");
   const [manualDonationMethod, setManualDonationMethod] = useState("নগদ");
+
+  // Ledger View Requests State (হিসাব দেখার অনুরোধ)
+  const [ledgerRequests, setLedgerRequests] = useState<LedgerRequest[]>([]);
+  const [showAddLedgerRequestModal, setShowAddLedgerRequestModal] = useState(false);
+  const [newReqName, setNewReqName] = useState("");
+  const [newReqPhone, setNewReqPhone] = useState("");
+  const [newReqEmail, setNewReqEmail] = useState("");
+  const [newReqReason, setNewReqReason] = useState("");
+  const [requestFilterStatus, setRequestFilterStatus] = useState<"all" | "pending" | "approved" | "rejected">("all");
 
   // Manual Member Entry State
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -627,6 +646,105 @@ export default function AdminPanel() {
       totalDonations: computedTotalDonations,
       pendingDonations: pendingDonationsData.length,
     });
+
+    // Load & Auto-seed sample ledger view requests (হিসাব দেখার অনুরোধ)
+    let savedLedgerRequests = JSON.parse(localStorage.getItem("ledgerViewRequests") || "[]");
+    if (!savedLedgerRequests || savedLedgerRequests.length === 0) {
+      savedLedgerRequests = [
+        {
+          id: "req-101",
+          requesterName: "মোঃ হাসান মাহমুদ",
+          phone: "01755667788",
+          email: "hasan@gmail.com",
+          requestDate: "২৮ মে ২০২৬",
+          reason: "বাৎসরিক সাধারণ সভার জন্য আয় ও খরচের সম্পূর্ণ হিসাব বিবরণী প্রয়োজন",
+          status: "pending",
+        },
+        {
+          id: "req-102",
+          requesterName: "সাদিয়া তানজিম",
+          phone: "01899887766",
+          email: "sadia@gmail.com",
+          requestDate: "২৬ মে ২০২৬",
+          reason: "সংগঠনের নিরিক্ষণ (Audit) কাজের তথ্য সংগ্রহ",
+          status: "pending",
+        },
+        {
+          id: "req-103",
+          requesterName: "আব্দুর রহমান",
+          phone: "01911223344",
+          email: "rahman@gmail.com",
+          requestDate: "২০ মে ২০২৬",
+          reason: "মাসিক অনুদানের ভাউচার যাচাইকরণ",
+          status: "approved",
+        }
+      ];
+      localStorage.setItem("ledgerViewRequests", JSON.stringify(savedLedgerRequests));
+    }
+    setLedgerRequests(savedLedgerRequests);
+  };
+
+  // Approve Ledger Request
+  const approveLedgerRequest = (id: string) => {
+    if (window.confirm("এই হিসাব দেখার অনুরোধটি অনুমোদন করতে চান?")) {
+      const updated = ledgerRequests.map(r => r.id === id ? { ...r, status: "approved" as const } : r);
+      localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
+      setLedgerRequests(updated);
+      alert("অনুরোধটি অনুমোদিত হয়েছে। সদস্যকে হিসাব দেখার অধিকার প্রদান করা হলো।");
+    }
+  };
+
+  // Reject Ledger Request
+  const rejectLedgerRequest = (id: string) => {
+    if (window.confirm("এই হিসাব দেখার অনুরোধটি বাতিল করতে চান?")) {
+      const updated = ledgerRequests.map(r => r.id === id ? { ...r, status: "rejected" as const } : r);
+      localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
+      setLedgerRequests(updated);
+      alert("অনুরোধটি বাতিল করা হয়েছে।");
+    }
+  };
+
+  // Delete Ledger Request
+  const deleteLedgerRequest = (id: string) => {
+    if (window.confirm("এই অনুরোধটি স্থায়ীভাবে মুছে ফেলতে চান?")) {
+      const updated = ledgerRequests.filter(r => r.id !== id);
+      localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
+      setLedgerRequests(updated);
+      alert("অনুরোধটি মুছে ফেলা হয়েছে।");
+    }
+  };
+
+  // Save manual new ledger request
+  const saveNewLedgerRequest = () => {
+    if (!newReqName.trim()) {
+      alert("আবেদনকারীর নাম দিন");
+      return;
+    }
+    if (!newReqPhone.trim()) {
+      alert("মোবাইল নম্বর দিন");
+      return;
+    }
+
+    const newReq: LedgerRequest = {
+      id: "req-" + Date.now(),
+      requesterName: newReqName.trim(),
+      phone: newReqPhone.trim(),
+      email: newReqEmail.trim() || "-",
+      requestDate: new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' }),
+      reason: newReqReason.trim() || "হিসাব দেখার অনুরোধ",
+      status: "pending",
+    };
+
+    const updated = [newReq, ...ledgerRequests];
+    localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
+    setLedgerRequests(updated);
+
+    setShowAddLedgerRequestModal(false);
+    setNewReqName("");
+    setNewReqPhone("");
+    setNewReqEmail("");
+    setNewReqReason("");
+    alert("নতুন হিসাব দেখার অনুরোধ সফলভাবে যোগ করা হয়েছে");
   };
 
   // Save custom income/expense ledger entry
@@ -1723,6 +1841,16 @@ export default function AdminPanel() {
               নতুন সদস্য ({pendingUsers.filter(u => u.status === "pending").length})
             </button>
             <button
+              onClick={() => setActiveTab("ledger-requests")}
+              className={`flex-1 py-4 px-6 font-bold text-center transition-colors ${
+                activeTab === "ledger-requests"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              📋 হিসাব দেখার অনুরোধ ({ledgerRequests.filter(r => r.status === "pending").length})
+            </button>
+            <button
               onClick={() => setActiveTab("pending")}
               className={`flex-1 py-4 px-6 font-bold text-center transition-colors ${
                 activeTab === "pending"
@@ -1994,6 +2122,139 @@ export default function AdminPanel() {
                   <div className="text-5xl mb-4">✅</div>
                   <p className="text-gray-500 text-lg">কোনো পেন্ডিং সদস্য নেই</p>
                   <p className="text-gray-400 text-sm mt-2">সকল নিবন্ধন অনুমোদিত হয়েছে</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Ledger View Requests Tab (হিসাব দেখার অনুরোধ - নতুন সদস্যের ডান পাশে) */}
+          {activeTab === "ledger-requests" && (
+            <div className="p-6 overflow-x-auto">
+              <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <span>📋</span>
+                    <span>হিসাব দেখার অনুরোধের তালিকা</span>
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-0.5">যে সকল সদস্য বা দাতা আয়/ব্যয়ের বিস্তারিত হিসাব দেখতে আবেদন করেছেন</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
+                    <button
+                      onClick={() => setRequestFilterStatus("all")}
+                      className={`px-3 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                        requestFilterStatus === "all" ? "bg-blue-600 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      সব ({ledgerRequests.length})
+                    </button>
+                    <button
+                      onClick={() => setRequestFilterStatus("pending")}
+                      className={`px-3 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                        requestFilterStatus === "pending" ? "bg-amber-600 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      অপেক্ষমাণ ({ledgerRequests.filter(r => r.status === "pending").length})
+                    </button>
+                    <button
+                      onClick={() => setRequestFilterStatus("approved")}
+                      className={`px-3 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                        requestFilterStatus === "approved" ? "bg-emerald-600 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      অনুমোদিত ({ledgerRequests.filter(r => r.status === "approved").length})
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowAddLedgerRequestModal(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow transition-all text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>➕</span>
+                    <span>নতুন অনুরোধ যোগ করুন</span>
+                  </button>
+                </div>
+              </div>
+
+              {ledgerRequests.filter(r => requestFilterStatus === "all" || r.status === requestFilterStatus).length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-200">
+                  <div className="text-4xl mb-2">📥</div>
+                  <p className="text-gray-500 font-bold text-sm">কোনো হিসাব দেখার অনুরোধ পাওয়া যায়নি</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-gray-200 rounded-xl shadow-sm">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-900 text-white">
+                      <tr>
+                        <th className="py-3 px-4 text-left text-xs font-bold uppercase tracking-wider">#</th>
+                        <th className="py-3 px-4 text-left text-xs font-bold uppercase tracking-wider">আবেদনকারীর নাম</th>
+                        <th className="py-3 px-4 text-left text-xs font-bold uppercase tracking-wider">মোবাইল ও ইমেইল</th>
+                        <th className="py-3 px-4 text-center text-xs font-bold uppercase tracking-wider">আবেদনের তারিখ</th>
+                        <th className="py-3 px-4 text-left text-xs font-bold uppercase tracking-wider">কারণ / বিবরণ</th>
+                        <th className="py-3 px-4 text-center text-xs font-bold uppercase tracking-wider">স্ট্যাটাস</th>
+                        <th className="py-3 px-4 text-center text-xs font-bold uppercase tracking-wider">অ্যাকশন</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {ledgerRequests
+                        .filter(r => requestFilterStatus === "all" || r.status === requestFilterStatus)
+                        .map((req, idx) => (
+                          <tr key={req.id || idx} className="hover:bg-blue-50/50 transition-colors">
+                            <td className="py-3.5 px-4 text-xs font-bold text-gray-500">{idx + 1}</td>
+                            <td className="py-3.5 px-4 font-bold text-sm text-gray-800">{req.requesterName}</td>
+                            <td className="py-3.5 px-4 text-xs text-gray-600">
+                              <p className="font-semibold text-blue-900">{req.phone}</p>
+                              {req.email && req.email !== "-" && <p className="text-[11px] text-gray-500">{req.email}</p>}
+                            </td>
+                            <td className="py-3.5 px-4 text-center text-xs text-gray-600 font-medium">{req.requestDate}</td>
+                            <td className="py-3.5 px-4 text-xs text-gray-700 max-w-xs">{req.reason}</td>
+                            <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                              {req.status === "pending" && (
+                                <span className="bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full text-xs font-bold border border-amber-300">
+                                  ⏳ অপেক্ষমাণ
+                                </span>
+                              )}
+                              {req.status === "approved" && (
+                                <span className="bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full text-xs font-bold border border-emerald-300">
+                                  ✓ অনুমোদিত
+                                </span>
+                              )}
+                              {req.status === "rejected" && (
+                                <span className="bg-red-100 text-red-800 px-2.5 py-1 rounded-full text-xs font-bold border border-red-300">
+                                  ✕ বাতিলকৃত
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-2">
+                                {req.status === "pending" && (
+                                  <>
+                                    <button
+                                      onClick={() => approveLedgerRequest(req.id)}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer"
+                                    >
+                                      এপ্রুভ
+                                    </button>
+                                    <button
+                                      onClick={() => rejectLedgerRequest(req.id)}
+                                      className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer"
+                                    >
+                                      বাতিল
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => deleteLedgerRequest(req.id)}
+                                  className="bg-red-600 hover:bg-red-700 text-white px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer"
+                                  title="মুছে ফেলুন"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -2960,6 +3221,86 @@ export default function AdminPanel() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Add Ledger View Request Modal (হিসাব দেখার নতুন অনুরোধ যোগ করার মোডাল) */}
+        {showAddLedgerRequestModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+              <div className="flex justify-between items-center mb-5 border-b pb-3">
+                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <span>📋</span>
+                  <span>নতুন হিসাব দেখার অনুরোধ যোগ করুন</span>
+                </h3>
+                <button
+                  onClick={() => setShowAddLedgerRequestModal(false)}
+                  className="text-gray-400 hover:text-gray-600 text-xl font-bold p-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">আবেদনকারীর নাম *</label>
+                  <input
+                    type="text"
+                    value={newReqName}
+                    onChange={(e) => setNewReqName(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-blue-600"
+                    placeholder="যেমন: মোঃ হাসান মাহমুদ"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">মোবাইল নম্বর *</label>
+                  <input
+                    type="text"
+                    value={newReqPhone}
+                    onChange={(e) => setNewReqPhone(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-blue-600"
+                    placeholder="যেমন: 01712345678"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">ইমেইল (ঐচ্ছিক)</label>
+                  <input
+                    type="email"
+                    value={newReqEmail}
+                    onChange={(e) => setNewReqEmail(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-blue-600"
+                    placeholder="যেমন: example@gmail.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">অনুরোধের কারণ / বিবরণ</label>
+                  <textarea
+                    value={newReqReason}
+                    onChange={(e) => setNewReqReason(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-blue-600"
+                    rows={3}
+                    placeholder="যেমন: আয়ের হিসাব নিরীক্ষণের জন্য বিবরণী প্রয়োজন"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddLedgerRequestModal(false)}
+                    className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 rounded-lg text-sm cursor-pointer"
+                  >
+                    বাতিল
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveNewLedgerRequest}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg text-sm cursor-pointer"
+                  >
+                    সংরক্ষণ করুন
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
