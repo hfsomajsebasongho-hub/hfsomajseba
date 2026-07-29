@@ -143,6 +143,9 @@ export default function AdminPanel() {
   const DEFAULT_ADMIN_ACCOUNTS = [
     { username: "admin", password: "129430" },
     { username: "admin", password: "13579" },
+    { username: "admin", password: "123456" },
+    { username: "admin", password: "admin@123" },
+    { username: "mdtarek48", password: "112233" },
   ];
 
   // Helper to secure credentials stored in LocalStorage from plain-text DevTools/Inspect viewing
@@ -163,20 +166,33 @@ export default function AdminPanel() {
   };
 
   const getAdminAccounts = () => {
-    if (typeof window === "undefined") return DEFAULT_ADMIN_ACCOUNTS;
+    const accounts: { username: string; password: string }[] = [...DEFAULT_ADMIN_ACCOUNTS];
+    if (typeof window === "undefined") return accounts;
+
     const saved = localStorage.getItem("adminAccounts_sec");
     if (saved) {
       try {
         const decoded = decodeSecret(saved);
         const parsed = JSON.parse(decoded);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          parsed.forEach((savedAcc: { username: string; password: string }) => {
+            if (savedAcc && savedAcc.username && savedAcc.password) {
+              const exists = accounts.some(
+                acc => acc.username.toLowerCase() === savedAcc.username.toLowerCase() && acc.password === savedAcc.password
+              );
+              if (!exists) {
+                accounts.push(savedAcc);
+              }
+            }
+          });
+        }
       } catch (e) {
         // Fallback to default
       }
     }
     // Remove legacy unencrypted adminAccounts key
     localStorage.removeItem("adminAccounts");
-    return DEFAULT_ADMIN_ACCOUNTS;
+    return accounts;
   };
 
   // Check admin login status on component mount
