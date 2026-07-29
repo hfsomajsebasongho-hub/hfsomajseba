@@ -967,28 +967,34 @@ export default function ProfilePage() {
                     </span>
                   </div>
                 ) : userLedgerRequest.status === "approved" ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1">
-                      <span>✓</span>
-                      <span>আয় ব্যয় হিসাব</span>
-                    </span>
-                    <button
-                      onClick={downloadUserLedgerPDF}
-                      disabled={isGeneratingPdf}
-                      className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-800 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-emerald-600/30 transition-all text-sm flex items-center gap-2 cursor-pointer"
-                    >
-                      {isGeneratingPdf ? (
-                        <>
-                          <span className="animate-spin">⏳</span>
-                          <span>PDF ফাইল তৈরি হচ্ছে...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>📄</span>
-                          <span>হিসাব দেখুন (PDF)</span>
-                        </>
-                      )}
-                    </button>
+                  <div className="flex flex-col items-center md:items-end gap-2.5">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        onClick={handleRequestLedgerView}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition-all text-xs flex items-center gap-1.5 cursor-pointer border border-blue-400/30"
+                        title="নতুন বা হালনাগাদ হিসাব দেখতে এডমিনের কাছে অনুরোধ পাঠান"
+                      >
+                        <span>🔄</span>
+                        <span>নতুন হিসাব দেখুন</span>
+                      </button>
+                      <button
+                        onClick={downloadUserLedgerPDF}
+                        disabled={isGeneratingPdf}
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-800 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-emerald-600/30 transition-all text-sm flex items-center gap-2 cursor-pointer"
+                      >
+                        {isGeneratingPdf ? (
+                          <>
+                            <span className="animate-spin">⏳</span>
+                            <span>PDF ফাইল তৈরি হচ্ছে...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>📄</span>
+                            <span>হিসাব দেখুন (PDF)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 ) : userLedgerRequest.status === "rejected" ? (
                   <div className="flex flex-wrap items-center gap-3">
