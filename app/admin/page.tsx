@@ -1923,12 +1923,6 @@ export default function AdminPanel() {
             >
               📊 দানের হিসাব ({allDonations.length})
             </button>
-            <Link
-              href="/gallery"
-              className="flex-1 py-4 px-6 font-bold text-center transition-colors bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-            >
-              🖼️ ফটো গ্যালারী (Upload/View) ↗
-            </Link>
           </div>
 
           {/* Members Tab */}
