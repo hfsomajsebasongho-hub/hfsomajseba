@@ -13,15 +13,7 @@ interface Donation {
   transactionId?: string;
   senderPhone?: string;
   status?: string;
-  receipt?: {
-    receiptNumber: string;
-    donorName: string;
-    amount: number;
-    paymentMethod: string;
-    transactionId: string;
-    senderPhone: string;
-    date: string;
-  };
+  receipt?: any;
 }
 
 interface UserData {
@@ -414,11 +406,74 @@ export default function ProfilePage() {
       
       if (savedUser) {
         const user = JSON.parse(savedUser);
-        setUserData(user);
         checkUserLedgerRequest(user.phone, user.email);
         
-        // Ensure user is in allUsers list (for existing users)
         const allUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
+        const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+        
+        const userPhoneClean = (user.phone || "").replace(/[^0-9]/g, "");
+        const userInAllUsers = allUsers.find(
+          (u: any) => (u.phone && (u.phone === user.phone || u.phone.replace(/[^0-9]/g, "") === userPhoneClean)) ||
+                      (u.email && u.email !== "-" && u.email === user.email)
+        );
+        
+        let combinedDonations: Donation[] = user.donations ? [...user.donations] : [];
+        
+        // 1. Sync from allUsers if present
+        if (userInAllUsers && userInAllUsers.donations && Array.isArray(userInAllUsers.donations)) {
+          userInAllUsers.donations.forEach((d: any) => {
+            if (!combinedDonations.some(existing => existing.transactionId === d.transactionId || (existing.date === d.date && existing.amount === d.amount))) {
+              combinedDonations.push(d);
+            }
+          });
+        }
+
+        // 2. Sync from customLedgerEntries if phone number matches
+        if (userPhoneClean) {
+          customEntries.forEach((ce: any) => {
+            const cePhoneClean = (ce.phone || "").replace(/[^0-9]/g, "");
+            if (cePhoneClean && cePhoneClean === userPhoneClean) {
+              const entryTxId = ce.id || ce.transactionId || `manual-${ce.date}-${ce.incomeAmount || ce.expenseAmount}`;
+              const exists = combinedDonations.some(
+                (d) => d.transactionId === entryTxId || (d.date === ce.date && d.amount === (ce.incomeAmount || ce.expenseAmount))
+              );
+              if (!exists) {
+                combinedDonations.push({
+                  amount: ce.incomeAmount > 0 ? ce.incomeAmount : ce.expenseAmount,
+                  date: ce.date || "",
+                  method: ce.method || "নগদ",
+                  transactionId: entryTxId,
+                  senderPhone: ce.phone,
+                  status: "approved",
+                  receipt: {
+                    donorName: user.name,
+                    donorPhone: user.phone,
+                    donorAddress: user.address || "",
+                    donorBloodGroup: user.bloodGroup || "",
+                    remarks: ce.remarks || (ce.type === "expense" ? "ম্যানুয়াল ব্যয়" : "ম্যানুয়াল আয়"),
+                    type: ce.type || (ce.expenseAmount > 0 ? "expense" : "income")
+                  }
+                });
+              }
+            }
+          });
+        }
+
+        // Calculate updated totals
+        const approvedDons = combinedDonations.filter(d => d.status === "approved");
+        const updatedTotal = approvedDons.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+        
+        const updatedUser = {
+          ...user,
+          donations: combinedDonations,
+          totalDonation: updatedTotal,
+          donationCount: approvedDons.length
+        };
+        
+        setUserData(updatedUser);
+        localStorage.setItem("userData", JSON.stringify(updatedUser));
+        
+        // Ensure user is in allUsers list
         const existingIndex = allUsers.findIndex((u: any) => u.email === user.email || u.phone === user.phone);
         if (existingIndex === -1 && user.name) {
           allUsers.push({
@@ -428,12 +483,12 @@ export default function ProfilePage() {
             address: user.address || "",
             bloodGroup: user.bloodGroup || "",
             joinDate: user.joinDate,
-            totalDonation: user.totalDonation || 0,
-            donationCount: user.donationCount || 0,
+            totalDonation: updatedTotal,
+            donationCount: approvedDons.length,
+            donations: combinedDonations
           });
           localStorage.setItem("allUsers", JSON.stringify(allUsers));
         } else if (existingIndex !== -1) {
-          // Update existing user data
           allUsers[existingIndex] = {
             ...allUsers[existingIndex],
             name: user.name,
@@ -441,8 +496,9 @@ export default function ProfilePage() {
             phone: user.phone,
             address: user.address || allUsers[existingIndex].address || "",
             bloodGroup: user.bloodGroup || "",
-            totalDonation: user.totalDonation || 0,
-            donationCount: user.donationCount || 0,
+            totalDonation: updatedTotal,
+            donationCount: approvedDons.length,
+            donations: combinedDonations
           };
           localStorage.setItem("allUsers", JSON.stringify(allUsers));
         }

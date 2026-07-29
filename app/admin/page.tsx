@@ -821,6 +821,86 @@ export default function AdminPanel() {
     existing.push(newEntry);
     localStorage.setItem("customLedgerEntries", JSON.stringify(existing));
 
+    // If phone number matches a registered user, sync entry into user's personal profile donations
+    const cleanInputPhone = ledgerPhone.trim().replace(/[^0-9]/g, "");
+    if (cleanInputPhone) {
+      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
+      let matchedInAllUsers = false;
+
+      const updatedAllUsers = allUsersData.map((u: UserData) => {
+        const uPhoneClean = (u.phone || "").replace(/[^0-9]/g, "");
+        if (uPhoneClean && uPhoneClean === cleanInputPhone) {
+          matchedInAllUsers = true;
+          const userDons = u.donations ? [...u.donations] : [];
+          const exists = userDons.some(d => d.transactionId === newEntry.id);
+          if (!exists) {
+            userDons.push({
+              amount: amountNum,
+              date: dateStr,
+              method: ledgerMethod,
+              transactionId: newEntry.id,
+              senderPhone: ledgerPhone.trim(),
+              status: "approved",
+              receipt: {
+                donorName: u.name,
+                donorPhone: u.phone,
+                donorAddress: u.address || "",
+                donorBloodGroup: u.bloodGroup || "",
+                remarks: ledgerRemarks.trim() || (ledgerType === "income" ? "ম্যানুয়াল আয়" : "ম্যানুয়াল ব্যয়"),
+                type: ledgerType
+              }
+            });
+          }
+          const approvedDons = userDons.filter(d => d.status === "approved");
+          return {
+            ...u,
+            donations: userDons,
+            totalDonation: approvedDons.reduce((sum, d) => sum + (Number(d.amount) || 0), 0),
+            donationCount: approvedDons.length
+          };
+        }
+        return u;
+      });
+
+      if (matchedInAllUsers) {
+        localStorage.setItem("allUsers", JSON.stringify(updatedAllUsers));
+      }
+
+      // Also update currently logged-in user in userData if matches
+      const savedUserStr = localStorage.getItem("userData");
+      if (savedUserStr) {
+        const savedUser = JSON.parse(savedUserStr);
+        const savedPhoneClean = (savedUser.phone || "").replace(/[^0-9]/g, "");
+        if (savedPhoneClean && savedPhoneClean === cleanInputPhone) {
+          const userDons = savedUser.donations ? [...savedUser.donations] : [];
+          const exists = userDons.some((d: any) => d.transactionId === newEntry.id);
+          if (!exists) {
+            userDons.push({
+              amount: amountNum,
+              date: dateStr,
+              method: ledgerMethod,
+              transactionId: newEntry.id,
+              senderPhone: ledgerPhone.trim(),
+              status: "approved",
+              receipt: {
+                donorName: savedUser.name,
+                donorPhone: savedUser.phone,
+                donorAddress: savedUser.address || "",
+                donorBloodGroup: savedUser.bloodGroup || "",
+                remarks: ledgerRemarks.trim() || (ledgerType === "income" ? "ম্যানুয়াল আয়" : "ম্যানুয়াল ব্যয়"),
+                type: ledgerType
+              }
+            });
+          }
+          const approvedDons = userDons.filter((d: any) => d.status === "approved");
+          savedUser.donations = userDons;
+          savedUser.totalDonation = approvedDons.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
+          savedUser.donationCount = approvedDons.length;
+          localStorage.setItem("userData", JSON.stringify(savedUser));
+        }
+      }
+    }
+
     setShowLedgerModal(false);
     setLedgerName("");
     setLedgerPhone("");
