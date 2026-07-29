@@ -51,6 +51,12 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/gallery" className="text-white hover:text-yellow-300 transition-colors font-semibold text-base flex items-center gap-2 group">
+                  <span className="text-yellow-400 font-bold group-hover:translate-x-1 transition-transform">›</span> 
+                  <span>গ্যালারী</span>
+                </Link>
+              </li>
+              <li>
                 <Link href="/donate" className="text-white hover:text-yellow-300 transition-colors font-semibold text-base flex items-center gap-2 group">
                   <span className="text-yellow-400 font-bold group-hover:translate-x-1 transition-transform">›</span> 
                   <span>ডোনেট করুন</span>

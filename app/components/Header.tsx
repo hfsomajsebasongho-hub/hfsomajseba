@@ -66,13 +66,16 @@ export default function Header() {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-6">
-            <Link href="/" className="hover:text-yellow-300 transition-colors font-medium">
+            <Link href="/" className={`hover:text-yellow-300 transition-colors font-medium ${pathname === "/" ? "text-yellow-300 font-bold" : ""}`}>
               হোম
             </Link>
-            <Link href="/donate" className="hover:text-yellow-300 transition-colors font-medium">
+            <Link href="/gallery" className={`hover:text-yellow-300 transition-colors font-medium ${pathname === "/gallery" ? "text-yellow-300 font-bold" : ""}`}>
+              গ্যালারী
+            </Link>
+            <Link href="/donate" className={`hover:text-yellow-300 transition-colors font-medium ${pathname === "/donate" ? "text-yellow-300 font-bold" : ""}`}>
               দান করুন
             </Link>
-            <Link href="/about" className="hover:text-yellow-300 transition-colors font-medium">
+            <Link href="/about" className={`hover:text-yellow-300 transition-colors font-medium ${pathname === "/about" ? "text-yellow-300 font-bold" : ""}`}>
               আমাদের সম্পর্কে
             </Link>
 
@@ -175,6 +178,9 @@ export default function Header() {
           <nav className="md:hidden pb-4 flex flex-col gap-3">
             <Link href="/" className="hover:text-yellow-300 transition-colors py-2 border-b border-blue-700">
               হোম
+            </Link>
+            <Link href="/gallery" className="hover:text-yellow-300 transition-colors py-2 border-b border-blue-700">
+              গ্যালারী
             </Link>
             <Link href="/donate" className="hover:text-yellow-300 transition-colors py-2 border-b border-blue-700">
               দান করুন
