@@ -84,6 +84,235 @@ export default function ProfilePage() {
   const [editBloodGroup, setEditBloodGroup] = useState("");
   const [editError, setEditError] = useState("");
 
+  // Ledger Request State (আয় ব্যয় হিসাব)
+  const [userLedgerRequest, setUserLedgerRequest] = useState<any>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  const checkUserLedgerRequest = (currentPhone?: string, currentEmail?: string) => {
+    if (typeof window === "undefined") return;
+    const phone = currentPhone || userData.phone;
+    const email = currentEmail || userData.email;
+    if (!phone && (!email || email === "-")) return;
+
+    const requests = JSON.parse(localStorage.getItem("ledgerViewRequests") || "[]");
+    const userReq = requests.find((r: any) => 
+      (phone && phone !== "-" && r.phone === phone) ||
+      (email && email !== "-" && r.email === email)
+    );
+    setUserLedgerRequest(userReq || null);
+  };
+
+  // Handle requesting ledger view from Admin
+  const handleRequestLedgerView = () => {
+    if (!userData || !userData.name || !userData.phone) {
+      alert("অনুরোধ পাঠানোর জন্য আপনার প্রোফাইল তথ্য সঠিক থাকা প্রয়োজন");
+      return;
+    }
+
+    const requests = JSON.parse(localStorage.getItem("ledgerViewRequests") || "[]");
+    
+    // Find index of existing request if any
+    const existingIndex = requests.findIndex((r: any) => 
+      (r.phone && r.phone === userData.phone) || (r.email && r.email !== "-" && r.email === userData.email)
+    );
+
+    const newReq = {
+      id: "req-" + Date.now(),
+      requesterName: userData.name,
+      phone: userData.phone,
+      email: userData.email || "-",
+      requestDate: new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' }),
+      reason: "ইউজার প্রোফাইল থেকে আয়-ব্যয় বিবরণী দেখার অনুরোধ",
+      status: "pending",
+    };
+
+    if (existingIndex !== -1) {
+      requests[existingIndex] = newReq;
+    } else {
+      requests.unshift(newReq);
+    }
+
+    localStorage.setItem("ledgerViewRequests", JSON.stringify(requests));
+    setUserLedgerRequest(newReq);
+    alert("আপনার আয়-ব্যয় হিসাব দেখার অনুরোধটি এডমিন প্যানেলে সফলভাবে পাঠানো হয়েছে। এডমিন অনুমোদন করলে আপনি সরাসরি PDF রিপোর্ট ডাউনলোড করে দেখতে পারবেন।");
+  };
+
+  // Download Income & Expense PDF Statement
+  const downloadUserLedgerPDF = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
+      const allUsersData = JSON.parse(localStorage.getItem("allUsers") || "[]");
+
+      const combinedLedger: any[] = [];
+      const processedIds = new Set<string>();
+
+      customEntries.forEach((ce: any) => {
+        const idKey = ce.id || ce.transactionId || `custom-${ce.date}-${ce.donorName}`;
+        if (!processedIds.has(idKey)) {
+          processedIds.add(idKey);
+          combinedLedger.push({
+            date: ce.date || "",
+            donorName: ce.donorName || "অজানা",
+            phone: ce.phone || "-",
+            method: ce.method || "নগদ",
+            incomeAmount: Number(ce.incomeAmount) || 0,
+            expenseAmount: Number(ce.expenseAmount) || 0,
+            remarks: ce.remarks || "-",
+            timestamp: ce.timestamp || 0
+          });
+        }
+      });
+
+      allUsersData.forEach((u: any) => {
+        if (u.donations && Array.isArray(u.donations)) {
+          u.donations.forEach((d: any) => {
+            if (d.status === "approved") {
+              const txId = d.transactionId || `approved-${u.phone}-${d.date}-${d.amount}`;
+              if (!processedIds.has(txId)) {
+                processedIds.add(txId);
+                combinedLedger.push({
+                  date: d.date || "",
+                  donorName: u.name || "দানকারী",
+                  phone: u.phone || "-",
+                  method: d.method || "অন্যান্য",
+                  incomeAmount: Number(d.amount) || 0,
+                  expenseAmount: 0,
+                  remarks: "অনুমোদিত দান",
+                  timestamp: d.timestamp || 0
+                });
+              }
+            }
+          });
+        }
+      });
+
+      if (combinedLedger.length === 0) {
+        alert("বর্তমানে ডাউনলোড করার মতো কোনো আয়/ব্যয় হিসাব পাওয়া যায়নি");
+        setIsGeneratingPdf(false);
+        return;
+      }
+
+      const totalIncome = combinedLedger.reduce((sum, item) => sum + item.incomeAmount, 0);
+      const totalExpense = combinedLedger.reduce((sum, item) => sum + item.expenseAmount, 0);
+      const netBalance = totalIncome - totalExpense;
+      const todayBn = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
+
+      // Create printable off-screen DOM element
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.left = "-9999px";
+      container.style.top = "-9999px";
+      container.style.width = "800px";
+      container.style.backgroundColor = "#ffffff";
+      container.style.padding = "30px";
+      container.style.color = "#1f2937";
+      container.style.fontFamily = "'SolaimanLipi', 'Segoe UI', Arial, sans-serif";
+
+      const rowsHtml = combinedLedger.map((item, idx) => `
+        <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 0 ? 'background-color: #f9fafb;' : ''}">
+          <td style="padding: 10px; font-size: 12px; white-space: nowrap;">${item.date}</td>
+          <td style="padding: 10px; font-size: 12px; font-weight: 600; color: #111827;">${item.donorName}</td>
+          <td style="padding: 10px; font-size: 12px; color: #4b5563;">${item.phone}</td>
+          <td style="padding: 10px; font-size: 12px;">${item.method}</td>
+          <td style="padding: 10px; font-size: 12px; text-align: right; color: #16a34a; font-weight: bold;">
+            ${item.incomeAmount > 0 ? "৳ " + item.incomeAmount.toLocaleString('bn-BD') : "-"}
+          </td>
+          <td style="padding: 10px; font-size: 12px; text-align: right; color: #dc2626; font-weight: bold;">
+            ${item.expenseAmount > 0 ? "৳ " + item.expenseAmount.toLocaleString('bn-BD') : "-"}
+          </td>
+          <td style="padding: 10px; font-size: 11px; color: #6b7280;">${item.remarks}</td>
+        </tr>
+      `).join("");
+
+      container.innerHTML = `
+        <div style="text-align: center; border-bottom: 3px double #1e40af; padding-bottom: 15px; margin-bottom: 20px;">
+          <h1 style="margin: 0; color: #1e40af; font-size: 24px; font-weight: bold;">HF সমাজসেবা সংঘ</h1>
+          <p style="margin: 4px 0 0 0; color: #374151; font-size: 14px; font-weight: 600;">আয়-ব্যয় ও লেজার হিসাব বিবরণী</p>
+          <p style="font-size: 12px; color: #6b7280; margin-top: 4px;">ইস্যুর তারিখ: ${todayBn} | আবেদনকারী: ${userData.name}</p>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; margin-bottom: 20px; gap: 12px;">
+          <div style="flex: 1; padding: 12px; border-radius: 8px; background-color: #f0fdf4; border: 1px solid #bbf7d0; text-align: center;">
+            <div style="font-size: 12px; font-weight: bold; color: #166534;">মোট আয়</div>
+            <div style="font-size: 18px; font-weight: 800; color: #15803d; margin-top: 4px;">৳ ${totalIncome.toLocaleString('bn-BD')}</div>
+          </div>
+          <div style="flex: 1; padding: 12px; border-radius: 8px; background-color: #fef2f2; border: 1px solid #fecaca; text-align: center;">
+            <div style="font-size: 12px; font-weight: bold; color: #991b1b;">মোট ব্যয়</div>
+            <div style="font-size: 18px; font-weight: 800; color: #b91c1c; margin-top: 4px;">৳ ${totalExpense.toLocaleString('bn-BD')}</div>
+          </div>
+          <div style="flex: 1; padding: 12px; border-radius: 8px; background-color: #eff6ff; border: 1px solid #bfdbfe; text-align: center;">
+            <div style="font-size: 12px; font-weight: bold; color: #1e40af;">অবশিষ্ট জের</div>
+            <div style="font-size: 18px; font-weight: 800; color: ${netBalance < 0 ? '#dc2626' : '#047857'}; margin-top: 4px;">৳ ${netBalance.toLocaleString('bn-BD')}</div>
+          </div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">তারিখ</th>
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">বিবরণ / দাতা</th>
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">মোবাইল</th>
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">পদ্ধতি</th>
+              <th style="padding: 10px; text-align: right; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #16a34a;">আয় (৳)</th>
+              <th style="padding: 10px; text-align: right; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #dc2626;">ব্যয় (৳)</th>
+              <th style="padding: 10px; text-align: left; font-size: 12px; border-bottom: 2px solid #9ca3af; color: #111827;">রিমার্কস</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      `;
+
+      document.body.appendChild(container);
+
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
+
+      document.body.removeChild(container);
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth - 20;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 10;
+
+      pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
+      heightLeft -= (pdfHeight - 20);
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + 10;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
+        heightLeft -= (pdfHeight - 20);
+      }
+
+      pdf.save(`HF_Somajseba_Ledger_${(userData.name || "user").replace(/\s+/g, "_")}.pdf`);
+    } catch (err) {
+      console.error(err);
+      alert("PDF ফাইল তৈরি করতে সমস্যা হয়েছে");
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   // Load user data from localStorage on mount and when page gets focus
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -100,6 +329,7 @@ export default function ProfilePage() {
       if (savedUser) {
         const user = JSON.parse(savedUser);
         setUserData(user);
+        checkUserLedgerRequest(user.phone, user.email);
         
         // Ensure user is in allUsers list (for existing users)
         const allUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
@@ -703,7 +933,81 @@ export default function ProfilePage() {
             </div>
           </div>
 
+          {/* Income & Expense Ledger Request Card (আয় ব্যয় হিসাব) */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 rounded-2xl p-6 shadow-xl text-white mb-8 border border-indigo-500/20">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="flex items-center gap-4 text-center md:text-left">
+                <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl border border-white/10 shadow-inner">
+                  📊
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2 justify-center md:justify-start">
+                    <span>আয় ব্যয় হিসাব</span>
+                  </h3>
+                  <p className="text-xs text-indigo-200 mt-1">
+                    সংগঠনের অর্থনৈতিক স্বচ্ছতার জন্য বিস্তারিত আয় ও খরচের বিবরণী অফিশিয়ালভাবে পেতে অনুরোধ জানান
+                  </p>
+                </div>
+              </div>
 
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                {!userLedgerRequest ? (
+                  <button
+                    onClick={handleRequestLedgerView}
+                    className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-indigo-500/30 transition-all text-sm flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>📊</span>
+                    <span>আয় ব্যয় হিসাবের জন্য অনুরোধ করুন</span>
+                  </button>
+                ) : userLedgerRequest.status === "pending" ? (
+                  <div className="flex items-center gap-3">
+                    <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2">
+                      <span className="animate-pulse">⏳</span>
+                      <span>আয় ব্যয় হিসাব (অনুরোধ অপেক্ষমাণ...)</span>
+                    </span>
+                  </div>
+                ) : userLedgerRequest.status === "approved" ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1">
+                      <span>✓</span>
+                      <span>আয় ব্যয় হিসাব</span>
+                    </span>
+                    <button
+                      onClick={downloadUserLedgerPDF}
+                      disabled={isGeneratingPdf}
+                      className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-800 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-emerald-600/30 transition-all text-sm flex items-center gap-2 cursor-pointer"
+                    >
+                      {isGeneratingPdf ? (
+                        <>
+                          <span className="animate-spin">⏳</span>
+                          <span>PDF ফাইল তৈরি হচ্ছে...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>📄</span>
+                          <span>হিসাব দেখুন (PDF)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : userLedgerRequest.status === "rejected" ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="bg-red-500/20 text-red-300 border border-red-500/40 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5">
+                      <span>✕</span>
+                      <span>অনুরোধ বাতিল হয়েছে</span>
+                    </span>
+                    <button
+                      onClick={handleRequestLedgerView}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl shadow text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>🔄</span>
+                      <span>পুনরায় অনুরোধ করুন</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
 
           {/* Profile Info */}
           <div className="mb-8">
