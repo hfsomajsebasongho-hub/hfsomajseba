@@ -525,6 +525,33 @@ export default function AdminPanel() {
     const savedUserStr = localStorage.getItem("userData");
     const savedUserObj = savedUserStr ? JSON.parse(savedUserStr) : null;
     
+    // Auto-sync any approved pendingUsers into allUsersData if missing
+    let hasAddedApproved = false;
+    pendingUsersList.forEach((pUser: PendingUser) => {
+      if (pUser.status === "approved") {
+        const exists = allUsersData.some(
+          (u: UserData) => (pUser.phone && u.phone === pUser.phone) || (pUser.email && pUser.email !== "-" && u.email === pUser.email)
+        );
+        if (!exists) {
+          allUsersData.push({
+            name: pUser.name,
+            email: pUser.email || "-",
+            phone: pUser.phone,
+            address: pUser.address || "-",
+            bloodGroup: pUser.bloodGroup,
+            joinDate: pUser.registrationDate,
+            totalDonation: 0,
+            donationCount: 0,
+            donations: [],
+          });
+          hasAddedApproved = true;
+        }
+      }
+    });
+    if (hasAddedApproved) {
+      localStorage.setItem("allUsers", JSON.stringify(allUsersData));
+    }
+
     // Deduplicate users safely and sync missing address
     const uniqueUsers: UserData[] = Array.from(
       new Map(
@@ -911,49 +938,72 @@ export default function AdminPanel() {
   };
 
   // Approve pending user
-  const approvePendingUser = (email: string) => {
-    if (window.confirm("এই ব্যবহারকারীকে অনুমোদন করতে চান?")) {
-      const pendingUser = pendingUsers.find(u => u.email === email);
-      if (!pendingUser) return;
-
-      const allUsersData = JSON.parse(localStorage.getItem("allUsers") || "[]");
+  const approvePendingUser = (targetUser: PendingUser) => {
+    if (window.confirm(`"${targetUser.name}"-কে অনুমোদন করতে চান?`)) {
+      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
+      const pendingUsersList: PendingUser[] = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
       
-      const approvedUser = {
-        name: pendingUser.name,
-        email: pendingUser.email,
-        phone: pendingUser.phone,
-        address: pendingUser.address || "-",
-        bloodGroup: pendingUser.bloodGroup,
-        joinDate: pendingUser.registrationDate,
+      const approvedUser: UserData = {
+        name: targetUser.name,
+        email: targetUser.email || "-",
+        phone: targetUser.phone,
+        address: targetUser.address || "-",
+        bloodGroup: targetUser.bloodGroup,
+        joinDate: targetUser.registrationDate,
         totalDonation: 0,
         donationCount: 0,
         donations: [],
       };
-      allUsersData.push(approvedUser);
-      localStorage.setItem("allUsers", JSON.stringify(allUsersData));
-      setAllUsers(allUsersData);
 
-      const updatedPendingUsers: PendingUser[] = pendingUsers.map(u =>
-        u.email === email ? { ...u, status: "approved" as const } : u
+      // Check if user already exists in allUsers (by phone or email)
+      const existingIdx = allUsersData.findIndex(
+        u => (targetUser.phone && u.phone === targetUser.phone) ||
+             (targetUser.email && targetUser.email !== "-" && u.email === targetUser.email)
       );
-      localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
-      setPendingUsers(updatedPendingUsers);
 
-      alert("ব্যবহারকারী অনুমোদিত হয়েছে। এখন তিনি লগইন করতে পারবেন।");
+      if (existingIdx !== -1) {
+        allUsersData[existingIdx] = {
+          ...allUsersData[existingIdx],
+          ...approvedUser,
+          totalDonation: allUsersData[existingIdx].totalDonation || 0,
+          donationCount: allUsersData[existingIdx].donationCount || 0,
+          donations: allUsersData[existingIdx].donations || [],
+        };
+      } else {
+        allUsersData.push(approvedUser);
+      }
+
+      localStorage.setItem("allUsers", JSON.stringify(allUsersData));
+
+      // Update status in pendingUsers list
+      const updatedPendingUsers: PendingUser[] = pendingUsersList.map(u => {
+        const isMatch = (targetUser.phone && u.phone === targetUser.phone) ||
+                        (targetUser.email && targetUser.email !== "-" && u.email === targetUser.email) ||
+                        (u.name === targetUser.name && u.registrationDate === targetUser.registrationDate);
+        return isMatch ? { ...u, status: "approved" as const } : u;
+      });
+
+      localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
+
+      alert(`"${targetUser.name}" সফলভাবে অনুমোদিত হয়েছেন। এখন সদস্য তালিকায় (সকল সদস্য) যুক্ত করা হয়েছে এবং তিনি লগইন করতে পারবেন।`);
       loadAllData();
     }
   };
 
   // Reject pending user
-  const rejectPendingUser = (email: string) => {
-    if (window.confirm("এই ব্যবহারকারীকে বাতিল করতে চান?")) {
-      const updatedPendingUsers: PendingUser[] = pendingUsers.map(u =>
-        u.email === email ? { ...u, status: "rejected" as const } : u
-      );
-      localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
-      setPendingUsers(updatedPendingUsers);
+  const rejectPendingUser = (targetUser: PendingUser) => {
+    if (window.confirm(`"${targetUser.name}"-এর আবেদন বাতিল করতে চান?`)) {
+      const pendingUsersList: PendingUser[] = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
+      const updatedPendingUsers: PendingUser[] = pendingUsersList.map(u => {
+        const isMatch = (targetUser.phone && u.phone === targetUser.phone) ||
+                        (targetUser.email && targetUser.email !== "-" && u.email === targetUser.email) ||
+                        (u.name === targetUser.name && u.registrationDate === targetUser.registrationDate);
+        return isMatch ? { ...u, status: "rejected" as const } : u;
+      });
 
-      alert("ব্যবহারকারী বাতিল করা হয়েছে");
+      localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
+      alert(`"${targetUser.name}"-এর আবেদন বাতিল করা হয়েছে।`);
+      loadAllData();
     }
   };
 
@@ -2100,13 +2150,13 @@ export default function AdminPanel() {
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-2">
                             <button
-                              onClick={() => approvePendingUser(user.email)}
+                              onClick={() => approvePendingUser(user)}
                               className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer"
                             >
                               এপ্রুভ করুন
                             </button>
                             <button
-                              onClick={() => rejectPendingUser(user.email)}
+                              onClick={() => rejectPendingUser(user)}
                               className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer"
                             >
                               বাতিল করুন
