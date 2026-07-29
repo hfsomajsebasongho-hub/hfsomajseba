@@ -143,9 +143,6 @@ export default function AdminPanel() {
   const DEFAULT_ADMIN_ACCOUNTS = [
     { username: "admin", password: "129430" },
     { username: "admin", password: "13579" },
-    { username: "admin", password: "123456" },
-    { username: "admin", password: "admin@123" },
-    { username: "mdtarek48", password: "112233" },
   ];
 
   // Helper to secure credentials stored in LocalStorage from plain-text DevTools/Inspect viewing
@@ -177,11 +174,14 @@ export default function AdminPanel() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           parsed.forEach((savedAcc: { username: string; password: string }) => {
             if (savedAcc && savedAcc.username && savedAcc.password) {
-              const exists = accounts.some(
-                acc => acc.username.toLowerCase() === savedAcc.username.toLowerCase() && acc.password === savedAcc.password
-              );
-              if (!exists) {
-                accounts.push(savedAcc);
+              // Only allow "admin" username
+              if (savedAcc.username.toLowerCase() === "admin") {
+                const exists = accounts.some(
+                  acc => acc.username.toLowerCase() === savedAcc.username.toLowerCase() && acc.password === savedAcc.password
+                );
+                if (!exists) {
+                  accounts.push(savedAcc);
+                }
               }
             }
           });
@@ -266,35 +266,23 @@ export default function AdminPanel() {
       return;
     }
 
+    if (inputUser !== "admin") {
+      setLoginError("ইউজার নেম বা পাসওয়ার্ড ভুল।");
+      return;
+    }
+
     const currentAccounts = getAdminAccounts();
-    let matchedAdmin = currentAccounts.find(
+    const matchedAdmin = currentAccounts.find(
       (acc: { username: string; password: string }) =>
-        acc.username.toLowerCase() === inputUser &&
+        acc.username.toLowerCase() === "admin" &&
         (acc.password === adminPassword || acc.password === inputPassword)
     );
 
-    // Fallback 1: Direct match with DEFAULT_ADMIN_ACCOUNTS
-    if (!matchedAdmin) {
-      matchedAdmin = DEFAULT_ADMIN_ACCOUNTS.find(
-        (acc: { username: string; password: string }) =>
-          acc.username.toLowerCase() === inputUser &&
-          (acc.password === adminPassword || acc.password === inputPassword)
-      );
-    }
-
-    // Fallback 2: Direct match for standard default admin passwords
-    if (!matchedAdmin && (inputUser === "admin" || inputUser === "mdtarek48")) {
-      const knownPasswords = ["129430", "13579", "123456", "112233", "admin@123", "admin"];
-      if (knownPasswords.includes(adminPassword) || knownPasswords.includes(inputPassword)) {
-        matchedAdmin = { username: inputUser, password: inputPassword || adminPassword };
-      }
-    }
-
     if (matchedAdmin) {
       setIsAdminLoggedIn(true);
-      setLoggedInAdminUser(matchedAdmin.username);
+      setLoggedInAdminUser("admin");
       localStorage.setItem("isAdminLoggedIn", "true");
-      localStorage.setItem("adminUsername", matchedAdmin.username);
+      localStorage.setItem("adminUsername", "admin");
       setAdminUsername("");
       setAdminPassword("");
       loadAllData();
@@ -1626,7 +1614,7 @@ export default function AdminPanel() {
                 value={adminUsername}
                 onChange={(e) => setAdminUsername(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-600"
-                placeholder="ইউজার নেম দিন (যেমন: mdtarek48)"
+                placeholder="ইউজার নেম দিন (যেমন: admin)"
               />
             </div>
 
@@ -1655,10 +1643,9 @@ export default function AdminPanel() {
                 <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-2">
                   <p className="font-semibold text-red-600">❌ {loginError}</p>
                   <div className="border-t border-red-200 pt-2 text-gray-700">
-                    <p className="font-bold text-gray-800 mb-1">কার্যকরী এডমিন ইউজার ও পাসওয়ার্ড:</p>
+                    <p className="font-bold text-gray-800 mb-1">অনুমোদিত এডমিন ইউজার ও পাসওয়ার্ড:</p>
                     <ul className="list-disc list-inside space-y-0.5 font-mono text-[11px] text-gray-700">
-                      <li>ইউজার: <strong className="text-blue-700">admin</strong> | পাসওয়ার্ড: <strong className="text-blue-700">129430</strong> / <strong className="text-blue-700">123456</strong> / <strong className="text-blue-700">13579</strong></li>
-                      <li>ইউজার: <strong className="text-blue-700">mdtarek48</strong> | পাসওয়ার্ড: <strong className="text-blue-700">112233</strong></li>
+                      <li>ইউজার: <strong className="text-blue-700">admin</strong> | পাসওয়ার্ড: <strong className="text-blue-700">129430</strong> / <strong className="text-blue-700">13579</strong></li>
                     </ul>
                     <button
                       type="button"
