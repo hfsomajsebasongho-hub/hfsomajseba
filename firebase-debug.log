@@ -1,0 +1,22 @@
+[debug] [2026-07-29T15:04:04.755Z] ----------------------------------------------------------------------
+[debug] [2026-07-29T15:04:04.759Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Lenovo\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy
+[debug] [2026-07-29T15:04:04.759Z] CLI Version:   15.24.0
+[debug] [2026-07-29T15:04:04.760Z] Platform:      win32
+[debug] [2026-07-29T15:04:04.760Z] Node Version:  v24.12.0
+[debug] [2026-07-29T15:04:04.760Z] Detected Agent: antigravity
+[debug] [2026-07-29T15:04:04.760Z] Time:          Wed Jul 29 2026 21:04:04 GMT+0600 (Bangladesh Standard Time)
+[debug] [2026-07-29T15:04:04.760Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-07-29T15:04:11.613Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-07-29T15:04:11.613Z] > authorizing via signed-in user (hfsomajsebasongho@gmail.com)
+[debug] [2026-07-29T15:04:11.613Z] [iam] checking project hfsomajseba for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]
+[debug] [2026-07-29T15:04:11.626Z] Checked if tokens are valid: false, expires at: 1785309299681
+[debug] [2026-07-29T15:04:11.626Z] Checked if tokens are valid: false, expires at: 1785309299681
+[debug] [2026-07-29T15:04:11.626Z] > refreshing access token with scopes: []
+[debug] [2026-07-29T15:04:11.629Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-07-29T15:04:11.629Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-07-29T15:04:11.919Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-07-29T15:04:11.919Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-07-29T15:04:11.941Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/hfsomajseba:testIamPermissions [none]
+[debug] [2026-07-29T15:04:11.942Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/hfsomajseba:testIamPermissions  x-goog-user-project=hfsomajseba
+[debug] [2026-07-29T15:04:11.942Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/hfsomajseba:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}
