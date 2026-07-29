@@ -957,7 +957,7 @@ export default function ProfilePage() {
                     className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-indigo-500/30 transition-all text-sm flex items-center gap-2 cursor-pointer"
                   >
                     <span>📊</span>
-                    <span>আয় ব্যয় হিসাবের জন্য অনুরোধ করুন</span>
+                    <span>আয় ব্যয় হিসাব দেখার অনুরোধ করুন</span>
                   </button>
                 ) : userLedgerRequest.status === "pending" ? (
                   <div className="flex items-center gap-3">
