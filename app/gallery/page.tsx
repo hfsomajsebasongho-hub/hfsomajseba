@@ -1,9 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { db } from "@/lib/firebase";
+import {
+  collection,
+  addDoc,
+  getDocs,
+  deleteDoc,
+  doc,
+  query,
+  orderBy,
+} from "firebase/firestore";
 
 export interface GalleryPhoto {
   id: string;
+  firestoreDocId?: string;
   title: string;
   category: string;
   date: string;
@@ -88,7 +99,6 @@ export default function GalleryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState<GalleryPhoto | null>(null);
   
-  // Upload modal state for Admin
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newCategory, setNewCategory] = useState("ত্রাণ বিতরণ");
@@ -116,43 +126,68 @@ export default function GalleryPage() {
   };
 
   useEffect(() => {
-    // Check admin status
     const isLogged = localStorage.getItem("isAdminLoggedIn") === "true";
     setIsAdminLoggedIn(isLogged);
 
-    // Load categories from localStorage if exists
-    const savedCategories = localStorage.getItem("galleryCategories");
-    if (savedCategories) {
+    const fetchPhotos = async () => {
       try {
-        const parsedCat = JSON.parse(savedCategories);
-        if (Array.isArray(parsedCat) && parsedCat.length > 0) {
-          setCategories(parsedCat);
-        }
-      } catch (e) {}
-    }
+        const q = query(collection(db, "galleryPhotos"), orderBy("createdAt", "desc"));
+        const fetchPromise = getDocs(q);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Firestore timeout")), 3000)
+        );
+        const snapshot = await Promise.race([fetchPromise, timeoutPromise]);
+        if (snapshot && !snapshot.empty) {
+          const firestorePhotos: GalleryPhoto[] = snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            firestoreDocId: docSnap.id,
+            ...(docSnap.data() as Omit<GalleryPhoto, "id">),
+          }));
+          setPhotos(firestorePhotos);
+          localStorage.setItem("galleryPhotos", JSON.stringify(firestorePhotos));
 
-    // Load photos from localStorage or initial demo photos
-    const saved = localStorage.getItem("galleryPhotos");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setPhotos(parsed);
+          const customCats = Array.from(new Set(firestorePhotos.map((p) => p.category)));
+          const mergedCats = Array.from(new Set([...INITIAL_CATEGORIES, ...customCats]));
+          setCategories(mergedCats);
+          localStorage.setItem("galleryCategories", JSON.stringify(mergedCats));
           return;
         }
-      } catch (e) {}
-    }
+      } catch (err) {
+        console.warn("Firestore fetch warning, loading local fallback:", err);
+      }
 
-    setPhotos(INITIAL_PHOTOS);
-    localStorage.setItem("galleryPhotos", JSON.stringify(INITIAL_PHOTOS));
+      const savedCategories = localStorage.getItem("galleryCategories");
+      if (savedCategories) {
+        try {
+          const parsedCat = JSON.parse(savedCategories);
+          if (Array.isArray(parsedCat) && parsedCat.length > 0) {
+            setCategories(parsedCat);
+          }
+        } catch (e) {}
+      }
+
+      const saved = localStorage.getItem("galleryPhotos");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setPhotos(parsed);
+            return;
+          }
+        } catch (e) {}
+      }
+
+      setPhotos(INITIAL_PHOTOS);
+      localStorage.setItem("galleryPhotos", JSON.stringify(INITIAL_PHOTOS));
+    };
+
+    fetchPhotos();
   }, []);
 
   const savePhotosToStorage = (updatedPhotos: GalleryPhoto[]) => {
     setPhotos(updatedPhotos);
     localStorage.setItem("galleryPhotos", JSON.stringify(updatedPhotos));
   };
-
-
 
   const handleAddPhotoSubmit = (e: React.FormEvent) => {
     e.preventDefault();
