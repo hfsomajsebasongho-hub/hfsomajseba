@@ -152,25 +152,7 @@ export default function GalleryPage() {
     localStorage.setItem("galleryPhotos", JSON.stringify(updatedPhotos));
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadError("ফাইল সাইজ সর্বোচ্চ ১০ মেগাবাইটের মধ্যে হতে হবে।");
-      return;
-    }
-    setUploadError("");
-    setSelectedFile(file);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (reader.result) {
-        setNewImageUrl(reader.result.toString());
-      }
-    };
-    reader.readAsDataURL(file);
-  };
 
   const handleAddPhotoSubmit = (e: React.FormEvent) => {
     e.preventDefault();
