@@ -1,32 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { db, storage } from "@/lib/firebase";
-import {
-  collection,
-  addDoc,
-  getDocs,
-  deleteDoc,
-  doc,
-  query,
-  orderBy,
-} from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 export interface GalleryPhoto {
   id: string;
-  firestoreDocId?: string;
   title: string;
   category: string;
   date: string;
   imageUrl: string;
   description?: string;
   uploadedBy?: string;
-  storagePath?: string;
   createdAt?: number;
 }
 
-const CATEGORIES = [
+const INITIAL_CATEGORIES = [
   "সবগুলো",
   "ত্রাণ বিতরণ",
   "সমাজসেবা",
@@ -86,7 +73,7 @@ const INITIAL_PHOTOS: GalleryPhoto[] = [
     id: "photo-6",
     title: "শিক্ষাসামগ্রী ও ব্যাগ বিতরণ উৎসব",
     category: "সমাজসেবা",
-    date: "২০২৫-০৭-১২",
+    date: "২০২৫-৭-১২",
     imageUrl: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1000&auto=format&fit=crop",
     description: "সুবিধাবঞ্চিত ৫০ জন প্রাথমিক বিদ্যালয়ের শিক্ষার্থীদের হাতে নতুন বই, খাতা, কলম ও ব্যাগ তুলে দেওয়া হলো।",
     uploadedBy: "Admin",
@@ -94,6 +81,7 @@ const INITIAL_PHOTOS: GalleryPhoto[] = [
 ];
 
 export default function GalleryPage() {
+  const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("সবগুলো");
@@ -104,54 +92,59 @@ export default function GalleryPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newCategory, setNewCategory] = useState("ত্রাণ বিতরণ");
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [customCategory, setCustomCategory] = useState("");
   const [newImageUrl, setNewImageUrl] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadType, setUploadType] = useState<"file" | "url">("file");
   const [uploadError, setUploadError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleImageUrlChange = (val: string) => {
+    let cleaned = val.trim();
+    // If user pasted HTML/BBCode snippet from ImgBB like <a href="..."><img src="https://i.ibb.co/..."/></a>
+    const srcMatch = cleaned.match(/src=["']([^"']+)["']/i);
+    if (srcMatch && srcMatch[1]) {
+      cleaned = srcMatch[1];
+    }
+    setNewImageUrl(cleaned);
+
+    // Validate ImgBB page URL (ibb.co/...) vs Direct Image URL (i.ibb.co/...)
+    if (cleaned.includes("ibb.co/") && !cleaned.includes("i.ibb.co/")) {
+      setUploadError("⚠️ এটি ImgBB এর ওয়েব পেজের লিংক (ibb.co)। ছবি দেখানোর জন্য ImgBB এর 'Direct link' (i.ibb.co/...) কপি করে দিন।");
+    } else {
+      setUploadError("");
+    }
+  };
 
   useEffect(() => {
     // Check admin status
     const isLogged = localStorage.getItem("isAdminLoggedIn") === "true";
     setIsAdminLoggedIn(isLogged);
 
-    const fetchPhotos = async () => {
-      // 1. Try loading from Firestore first
+    // Load categories from localStorage if exists
+    const savedCategories = localStorage.getItem("galleryCategories");
+    if (savedCategories) {
       try {
-        const q = query(collection(db, "galleryPhotos"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        if (!snapshot.empty) {
-          const firestorePhotos: GalleryPhoto[] = snapshot.docs.map((docSnap) => ({
-            id: docSnap.id,
-            firestoreDocId: docSnap.id,
-            ...(docSnap.data() as Omit<GalleryPhoto, "id">),
-          }));
-          setPhotos(firestorePhotos);
-          localStorage.setItem("galleryPhotos", JSON.stringify(firestorePhotos));
+        const parsedCat = JSON.parse(savedCategories);
+        if (Array.isArray(parsedCat) && parsedCat.length > 0) {
+          setCategories(parsedCat);
+        }
+      } catch (e) {}
+    }
+
+    // Load photos from localStorage or initial demo photos
+    const saved = localStorage.getItem("galleryPhotos");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPhotos(parsed);
           return;
         }
-      } catch (err) {
-        console.warn("Firestore fetch warning, loading local fallback:", err);
-      }
+      } catch (e) {}
+    }
 
-      // 2. Fallback to localStorage if Firestore is empty or offline
-      const saved = localStorage.getItem("galleryPhotos");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setPhotos(parsed);
-            return;
-          }
-        } catch (e) {}
-      }
-
-      // 3. Fallback to default demo photos
-      setPhotos(INITIAL_PHOTOS);
-      localStorage.setItem("galleryPhotos", JSON.stringify(INITIAL_PHOTOS));
-    };
-
-    fetchPhotos();
+    setPhotos(INITIAL_PHOTOS);
+    localStorage.setItem("galleryPhotos", JSON.stringify(INITIAL_PHOTOS));
   }, []);
 
   const savePhotosToStorage = (updatedPhotos: GalleryPhoto[]) => {
@@ -179,101 +172,50 @@ export default function GalleryPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleAddPhotoSubmit = async (e: React.FormEvent) => {
+  const handleAddPhotoSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) {
       setUploadError("অনুগ্রহ করে ছবির শিরোনাম প্রদান করুন।");
       return;
     }
-    if (!newImageUrl && !selectedFile) {
-      setUploadError("অনুগ্রহ করে একটি ছবি নির্বাচন করুন অথবা ছবির URL দিন।");
+    if (!newImageUrl) {
+      setUploadError("অনুগ্রহ করে ছবির একটি সঠিক URL প্রদান করুন অথবা ImgBB লিংক দিন।");
+      return;
+    }
+    if (newImageUrl.includes("ibb.co/") && !newImageUrl.includes("i.ibb.co/")) {
+      setUploadError("⚠️ এটি ImgBB এর ওয়েব পেজের লিংক (ibb.co)। ছবি দেখানোর জন্য ImgBB এর Embed codes -> 'Direct link' (i.ibb.co/...) কপি করে পেস্ট করুন।");
       return;
     }
 
     setIsSubmitting(true);
     setUploadError("");
 
-    let finalImageUrl = newImageUrl;
-    let finalStoragePath = "";
-
-    // 1. Try uploading file to Firebase Storage
-    if (uploadType === "file" && selectedFile) {
-      try {
-        const cleanName = selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-        const path = `gallery/${Date.now()}_${cleanName}`;
-        const storageRef = ref(storage, path);
-        await uploadBytes(storageRef, selectedFile);
-        finalImageUrl = await getDownloadURL(storageRef);
-        finalStoragePath = path;
-      } catch (err: any) {
-        console.warn("Firebase storage upload warning, using local preview Data URL:", err);
-        finalImageUrl = newImageUrl;
-      }
-    }
-
     const todayDate = new Date().toISOString().split("T")[0];
-    const photoData = {
+    const newPhoto: GalleryPhoto = {
+      id: "photo-" + Date.now(),
       title: newTitle.trim(),
       category: newCategory,
       date: todayDate,
-      imageUrl: finalImageUrl,
+      imageUrl: newImageUrl.trim(),
       uploadedBy: localStorage.getItem("adminUsername") || "Admin",
-      storagePath: finalStoragePath,
       createdAt: Date.now(),
-    };
-
-    let firestoreId = "";
-    // 2. Save document metadata to Firestore
-    try {
-      const docRef = await addDoc(collection(db, "galleryPhotos"), photoData);
-      firestoreId = docRef.id;
-    } catch (err) {
-      console.warn("Firestore save warning:", err);
-    }
-
-    const newPhoto: GalleryPhoto = {
-      id: firestoreId || "photo-" + Date.now(),
-      firestoreDocId: firestoreId,
-      ...photoData,
     };
 
     const updated = [newPhoto, ...photos];
     savePhotosToStorage(updated);
 
-    // Reset form
+    // Reset form & close modal instantly
     setNewTitle("");
     setNewCategory("ত্রাণ বিতরণ");
     setNewImageUrl("");
-    setSelectedFile(null);
     setUploadError("");
     setIsSubmitting(false);
     setShowUploadModal(false);
   };
 
-  const handleDeletePhoto = async (id: string, e?: React.MouseEvent) => {
+  const handleDeletePhoto = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!window.confirm("আপনি কি নিশ্চিত যে এই ছবিটি মুছে ফেলতে চান?")) return;
-
-    const targetPhoto = photos.find((p) => p.id === id);
-
-    // 1. Delete from Firestore if exists
-    if (targetPhoto?.firestoreDocId) {
-      try {
-        await deleteDoc(doc(db, "galleryPhotos", targetPhoto.firestoreDocId));
-      } catch (err) {
-        console.warn("Firestore delete warning:", err);
-      }
-    }
-
-    // 2. Delete from Firebase Storage if storagePath exists
-    if (targetPhoto?.storagePath) {
-      try {
-        const fileRef = ref(storage, targetPhoto.storagePath);
-        await deleteObject(fileRef);
-      } catch (err) {
-        console.warn("Firebase Storage delete warning:", err);
-      }
-    }
 
     const updated = photos.filter((p) => p.id !== id);
     savePhotosToStorage(updated);
@@ -352,7 +294,7 @@ export default function GalleryPage() {
 
           {/* Categories Pill Buttons */}
           <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
-            {CATEGORIES.map((cat) => {
+            {categories.map((cat) => {
               const isActive = selectedCategory === cat;
               return (
                 <button
@@ -399,12 +341,17 @@ export default function GalleryPage() {
                 className="group bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 flex flex-col cursor-pointer transform hover:-translate-y-1 relative"
               >
                 {/* Photo Thumbnail Container */}
-                <div className="relative aspect-[4/3] bg-gray-900 overflow-hidden">
+                <div className="relative aspect-[4/3] bg-slate-100 overflow-hidden flex items-center justify-center">
                   <img
                     src={photo.imageUrl}
                     alt={photo.title}
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                     loading="lazy"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.onerror = null;
+                      target.src = "https://placehold.co/600x400/f1f5f9/64748b?text=Invalid+Image+URL";
+                    }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity"></div>
                   
@@ -533,8 +480,8 @@ export default function GalleryPage() {
                 📷
               </div>
               <div>
-                <h3 className="text-xl font-extrabold text-gray-900">গ্যালারীতে নতুন ছবি আপলোড</h3>
-                <p className="text-xs text-gray-500">🔥 ফায়ারবেস ক্লাউড স্টোরেজে সেভ হবে</p>
+                <h3 className="text-xl font-extrabold text-gray-900">গ্যালারীতে নতুন ছবি যোগ করুন</h3>
+                <p className="text-xs text-gray-500">🌐 ImgBB অথবা অনলাইন ছবির লিংক এর মাধ্যমে যুক্ত করুন</p>
               </div>
             </div>
 
@@ -562,68 +509,75 @@ export default function GalleryPage() {
 
               {/* Category */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  ক্যাটাগরি <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm text-gray-800 font-medium"
-                >
-                  {CATEGORIES.filter((c) => c !== "সবগুলো").map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Upload Source Toggle (File / URL) */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                  ছবি নির্বাচন করুন <span className="text-red-500">*</span>
-                </label>
-                <div className="flex gap-3 mb-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-gray-700">
+                    ক্যাটাগরি <span className="text-red-500">*</span>
+                  </label>
                   <button
                     type="button"
-                    onClick={() => setUploadType("file")}
-                    className={`flex-1 py-2 text-xs font-bold rounded-xl border cursor-pointer transition-colors ${
-                      uploadType === "file"
-                        ? "bg-emerald-600 text-white border-emerald-600"
-                        : "bg-gray-100 text-gray-600 border-gray-200"
-                    }`}
+                    onClick={() => {
+                      setIsCreatingCategory(!isCreatingCategory);
+                      if (!isCreatingCategory) {
+                        setNewCategory("NEW_CATEGORY");
+                      } else {
+                        setNewCategory(categories[1] || "ত্রাণ বিতরণ");
+                      }
+                    }}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-700 underline cursor-pointer"
                   >
-                    📁 কম্পিউটার/মোবাইল ফাইল
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUploadType("url")}
-                    className={`flex-1 py-2 text-xs font-bold rounded-xl border cursor-pointer transition-colors ${
-                      uploadType === "url"
-                        ? "bg-emerald-600 text-white border-emerald-600"
-                        : "bg-gray-100 text-gray-600 border-gray-200"
-                    }`}
-                  >
-                    🌐 ছবির লিংক (URL)
+                    {isCreatingCategory ? "← তালিকা থেকে বেছে নিন" : "➕ নতুন ক্যাটাগরি লিখুন"}
                   </button>
                 </div>
 
-                {uploadType === "file" ? (
+                {isCreatingCategory ? (
                   <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="w-full text-xs text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 border border-gray-200 rounded-xl p-1 bg-gray-50 cursor-pointer"
+                    type="text"
+                    required
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    placeholder="নতুন ক্যাটাগরির নাম লিখুন (যেমন: শিক্ষা সহায়তা)"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm text-gray-800 font-medium"
                   />
                 ) : (
+                  <select
+                    value={newCategory}
+                    onChange={(e) => {
+                      if (e.target.value === "NEW_CATEGORY") {
+                        setIsCreatingCategory(true);
+                      } else {
+                        setNewCategory(e.target.value);
+                      }
+                    }}
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm text-gray-800 font-medium cursor-pointer"
+                  >
+                    {categories.filter((c) => c !== "সবগুলো").map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                    <option value="NEW_CATEGORY">➕ নতুন ক্যাটাগরি যোগ করুন...</option>
+                  </select>
+                )}
+              </div>
+
+              {/* Image URL Input */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  ছবির লিংক (URL) <span className="text-red-500">*</span>
+                </label>
+
+                <div className="space-y-1.5">
                   <input
                     type="url"
                     value={newImageUrl}
-                    onChange={(e) => setNewImageUrl(e.target.value)}
-                    placeholder="https://example.com/photo.jpg"
+                    onChange={(e) => handleImageUrlChange(e.target.value)}
+                    placeholder="https://i.ibb.co/xxxx/photo.jpg অথবা ছবির অনলাইন লিংক"
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm text-gray-800"
                   />
-                )}
+                  <p className="text-[11px] text-gray-600 bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">
+                    💡 <strong>সঠিক লিংক টিপস:</strong> ImgBB-তে আপলোড করার পর নিচে <strong>Embed codes</strong> থেকে <strong>Direct link</strong> নির্বাচন করে সেটি কপি করুন (যেমন: <code className="bg-white px-1 py-0.5 rounded border border-emerald-300 font-mono text-[10px]">https://i.ibb.co/.../photo.jpg</code>)।
+                  </p>
+                </div>
               </div>
 
               {/* Preview Thumbnail */}
@@ -637,6 +591,10 @@ export default function GalleryPage() {
                       src={newImageUrl}
                       alt="Preview"
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fallback if image URL is broken
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
                     />
                   </div>
                 </div>
@@ -652,12 +610,12 @@ export default function GalleryPage() {
                   {isSubmitting ? (
                     <>
                       <span className="animate-spin">⏳</span>
-                      <span>ফায়ারবেস ক্লাউডে আপলোড হচ্ছে...</span>
+                      <span>ছবি সেভ হচ্ছে...</span>
                     </>
                   ) : (
                     <>
-                      <span>📤</span>
-                      <span>ফায়ারবেজে ছবি সংরক্ষণ করুন</span>
+                      <span>✨</span>
+                      <span>ছবি গ্যালারিতে প্রকাশ করুন</span>
                     </>
                   )}
                 </button>
