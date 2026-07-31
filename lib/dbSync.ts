@@ -83,6 +83,82 @@ export interface LedgerRequest {
   status: "pending" | "approved" | "rejected";
 }
 
+export interface TeamMember {
+  id?: string;
+  name: string;
+  role: string;
+  emoji: string;
+}
+
+export interface Milestone {
+  id?: string;
+  year: string;
+  event: string;
+  icon: string;
+}
+
+export interface WorkItem {
+  id?: string;
+  icon: string;
+  title: string;
+  description: string;
+  bgClass?: string;
+  textClass?: string;
+}
+
+export interface AboutData {
+  heroTitle: string;
+  heroSubtitle: string;
+  storyTitle: string;
+  storyParagraphs: string[];
+  missionTitle: string;
+  missionDescription: string;
+  visionTitle: string;
+  visionDescription: string;
+  workItems: WorkItem[];
+  milestones: Milestone[];
+  teamMembers: TeamMember[];
+  ctaTitle: string;
+  ctaSubtitle: string;
+  ctaButtonText: string;
+}
+
+export const DEFAULT_ABOUT_DATA: AboutData = {
+  heroTitle: "আমাদের সম্পর্কে",
+  heroSubtitle: "HF সমাজসেবা সংঘ সমাজের অসহায় ও দুঃস্থ মানুষদের সেবায় নিবেদিত একটি স্বেচ্ছাসেবী সংগঠন",
+  storyTitle: "আমাদের গল্প ও পথচলা",
+  storyParagraphs: [
+    "এইচ এফ সমাজসেবা সংঘ - সমাজের অসহায়, দুঃস্থ ও সুবিধাবঞ্চিত মানুষের পাশে দাঁড়ানোর অঙ্গীকার নিয়ে গঠিত একটি অলাভজনক সামাজিক সংগঠন।",
+    "মানবিক মূল্যবোধ এবং সমাজকল্যাণের মহান ব্রত নিয়ে ২০২৫ সালে আমাদের এই সংগঠনের আনুষ্ঠানিক পথচলা শুরু হয়। প্রতিষ্ঠালগ্ন থেকেই আমরা সমাজের পিছিয়ে পড়া মানুষের মৌলিক চাহিদা পূরণে নিরলসভাবে কাজ করে যাচ্ছি।",
+    "আমাদের মূল উদ্দেশ্য হলো খাদ্য সহায়তা, শিক্ষা বৃত্তি, বিনামূল্যে চিকিৎসা সেবা এবং শীতবস্ত্র বিতরণের মাধ্যমে একটি সুন্দর ও স্বাবলম্বী সমাজ গড়ে তোলা। আপনাদের ভালোবাসায় ও সহযোগিতায় আমরা আরও বহু মানুষের মুখে হাসি ফোটাতে সক্ষম হব, ইনশাআল্লাহ।"
+  ],
+  missionTitle: "আমাদের লক্ষ্য",
+  missionDescription: "সমাজের প্রতিটি অসহায় ও দুঃস্থ মানুষের পাশে দাঁড়ানো এবং তাদের মৌলিক চাহিদা পূরণে সহায়তা করা। শিক্ষা, চিকিৎসা ও খাদ্য সহায়তার মাধ্যমে একটি সুন্দর সমাজ গড়ে তোলা।",
+  visionTitle: "আমাদের দৃষ্টিভঙ্গি",
+  visionDescription: "এমন একটি সমাজ গড়ে তোলা যেখানে কেউ অসহায় নয়, কেউ ক্ষুধার্ত নয়, সবার শিক্ষা ও চিকিৎসার সুযোগ আছে। যেখানে মানুষ মানুষের পাশে দাঁড়ায়।",
+  workItems: [
+    { id: "work-1", icon: "🍚", title: "খাদ্য সহায়তা", description: "দরিদ্র পরিবারগুলোকে নিয়মিত খাদ্য সামগ্রী বিতরণ করি", bgClass: "bg-red-50", textClass: "text-red-800" },
+    { id: "work-2", icon: "📚", title: "শিক্ষা বৃত্তি", description: "মেধাবী ও দরিদ্র ছাত্র-ছাত্রীদের বৃত্তি প্রদান করি", bgClass: "bg-blue-50", textClass: "text-blue-800" },
+    { id: "work-3", icon: "🏥", title: "চিকিৎসা সেবা", description: "অসুস্থ ও দরিদ্রদের চিকিৎসা খরচ বহন করি", bgClass: "bg-green-50", textClass: "text-green-800" },
+    { id: "work-4", icon: "👗", title: "বস্ত্র বিতরণ", description: "শীতকালে গরম কাপড় ও ঈদে নতুন পোশাক বিতরণ", bgClass: "bg-purple-50", textClass: "text-purple-800" },
+  ],
+  milestones: [
+    { id: "ms-1", year: "২০২৫", event: "HF সমাজসেবা সংঘ প্রতিষ্ঠা ও শুভ পথচলা শুরু", icon: "🎉" },
+    { id: "ms-2", year: "২০২৫", event: "১০০+ দরিদ্র পরিবারকে খাদ্য ও আর্থিক সহায়তা", icon: "🏠" },
+    { id: "ms-3", year: "২০২৬", event: "মেধাবী শিক্ষার্থীদের জন্য শিক্ষা বৃত্তি প্রকল্প", icon: "📚" },
+    { id: "ms-4", year: "২০২৬", event: "জরুরি চিকিৎসা সেবা ও বস্ত্র বিতরণ কার্যক্রম", icon: "🏥" },
+  ],
+  teamMembers: [
+    { id: "team-1", name: "মোহাম্মদ আলী", role: "প্রতিষ্ঠাতা ও চেয়ারম্যান", emoji: "👨‍💼" },
+    { id: "team-2", name: "ফাতিমা জামান", role: "সাধারণ সম্পাদক", emoji: "👩‍💼" },
+    { id: "team-3", name: "কামাল হোসেন", role: "অর্থ সচিব", emoji: "👨‍💼" },
+    { id: "team-4", name: "রুবিনা আক্তার", role: "প্রচার সম্পাদক", emoji: "👩‍💼" },
+  ],
+  ctaTitle: "আমাদের সাথে যুক্ত হোন",
+  ctaSubtitle: "আপনার সামান্য সাহায্যে আমরা অনেক মানুষের জীবন বদলে দিতে পারি",
+  ctaButtonText: "💝 এখনই দান করুন",
+};
+
 // Initial seed data ONLY if Firestore database collections are completely empty on first initialization
 const INITIAL_CUSTOM_ENTRIES: LedgerEntry[] = [
   {
@@ -563,3 +639,33 @@ export const deleteUserFromDb = async (docId: string) => {
     console.warn("Error deleting user from Firestore:", err);
   }
 };
+
+export const subscribeAboutData = (onData: (data: AboutData) => void) => {
+  const docRef = doc(db, "settings", "aboutPage");
+
+  const unsubscribe = onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      const data = docSnap.data() as AboutData;
+      onData({ ...DEFAULT_ABOUT_DATA, ...data });
+    } else {
+      onData(DEFAULT_ABOUT_DATA);
+    }
+  }, (err) => {
+    console.warn("Firestore aboutPage subscribe error:", err);
+    onData(DEFAULT_ABOUT_DATA);
+  });
+
+  return unsubscribe;
+};
+
+export const saveAboutDataToDb = async (data: AboutData) => {
+  try {
+    await setDoc(doc(db, "settings", "aboutPage"), { ...data, updatedAt: Date.now() }, { merge: true });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("aboutData", JSON.stringify(data));
+    }
+  } catch (err) {
+    console.warn("Error saving aboutPage data to Firestore:", err);
+  }
+};
+

@@ -17,6 +17,13 @@ import {
   saveAdminAccountsSecToDb,
   deleteCustomLedgerFromDb,
   deleteLedgerRequestFromDb,
+  subscribeAboutData,
+  saveAboutDataToDb,
+  DEFAULT_ABOUT_DATA,
+  AboutData,
+  TeamMember,
+  Milestone,
+  WorkItem,
 } from "@/lib/dbSync";
 
 interface DonationRecord {
@@ -100,6 +107,8 @@ export default function AdminPanel() {
   const [pendingDonations, setPendingDonations] = useState<PendingDonation[]>([]);
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [activeTab, setActiveTab] = useState("users");
+  const [aboutData, setAboutData] = useState<AboutData>(DEFAULT_ABOUT_DATA);
+  const [isSavingAbout, setIsSavingAbout] = useState(false);
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
@@ -264,6 +273,7 @@ export default function AdminPanel() {
       setLedgerRequests(data);
     });
     const unsubAdminAccounts = subscribeAdminAccounts(() => {});
+    const unsubAboutData = subscribeAboutData((data) => setAboutData(data));
 
     // Check URL parameters and custom events
     if (typeof window !== "undefined") {
@@ -304,6 +314,7 @@ export default function AdminPanel() {
       unsubCustomLedger();
       unsubLedgerRequests();
       unsubAdminAccounts();
+      unsubAboutData();
       window.removeEventListener("focus", checkAdminLoginStatus);
       window.removeEventListener("openAdminPasswordModal", handleOpenPasswordModalEvent);
     };
@@ -1722,6 +1733,16 @@ export default function AdminPanel() {
             >
               📊 দানের হিসাব ({allDonations.length})
             </button>
+            <button
+              onClick={() => setActiveTab("about")}
+              className={`flex-1 py-4 px-6 font-bold text-center transition-colors ${
+                activeTab === "about"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              ℹ️ আমাদের সম্পর্কে
+            </button>
           </div>
 
           {/* Members Tab */}
@@ -2300,6 +2321,420 @@ export default function AdminPanel() {
                   </div>
                 );
               })()}
+            </div>
+          )}
+
+          {/* About Us Management Tab */}
+          {activeTab === "about" && (
+            <div className="p-6 space-y-8">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 pb-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
+                    <span>ℹ️</span> 'আমাদের সম্পর্কে' পেজ কন্টেন্ট এডিটর
+                  </h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    হেডারের 'আমাদের সম্পর্কে' পেজের সমস্ত লেখা, ছবি/ইমোজি, টিম মেম্বার, লক্ষ্য এবং মাইলস্টোন এখান থেকে পরিবর্তন করুন।
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsSavingAbout(true);
+                    await saveAboutDataToDb(aboutData);
+                    setIsSavingAbout(false);
+                    alert("'আমাদের সম্পর্কে' পেজের সমস্ত তথ্য সফলভাবে আপডেট ও সেভ করা হয়েছে!");
+                  }}
+                  disabled={isSavingAbout}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-emerald-600/30 transition-all flex items-center gap-2 text-base cursor-pointer"
+                >
+                  <span>💾</span>
+                  <span>{isSavingAbout ? "সেভ হচ্ছে..." : "সমস্ত পরিবর্তন সেভ করুন"}</span>
+                </button>
+              </div>
+
+
+
+              {/* Section 2: Story & History */}
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 space-y-4">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="text-lg font-bold text-blue-800 flex items-center gap-2">
+                    <span>📖</span> আমাদের গল্প ও পথচলা (Story Section)
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = [...(aboutData.storyParagraphs || []), "নতুন প্যারাগ্রাফ এরিয়া"];
+                      setAboutData({ ...aboutData, storyParagraphs: updated });
+                    }}
+                    className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 font-bold px-3 py-1.5 rounded-lg border border-blue-300 transition-colors"
+                  >
+                    ➕ নতুন প্যারাগ্রাফ যোগ করুন
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">গল্পের শিরোনাম (Story Title)</label>
+                  <input
+                    type="text"
+                    value={aboutData.storyTitle}
+                    onChange={(e) => setAboutData({ ...aboutData, storyTitle: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white mb-4"
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-gray-700">প্যারাগ্রাফ সমূহ (Paragraphs)</label>
+                  {aboutData.storyParagraphs && aboutData.storyParagraphs.map((para, index) => (
+                    <div key={index} className="flex items-start gap-2">
+                      <span className="text-xs font-bold text-gray-400 mt-3">{index + 1}.</span>
+                      <textarea
+                        rows={3}
+                        value={para}
+                        onChange={(e) => {
+                          const updated = [...aboutData.storyParagraphs];
+                          updated[index] = e.target.value;
+                          setAboutData({ ...aboutData, storyParagraphs: updated });
+                        }}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = aboutData.storyParagraphs.filter((_, i) => i !== index);
+                          setAboutData({ ...aboutData, storyParagraphs: updated });
+                        }}
+                        className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors text-sm font-bold mt-1"
+                        title="প্যারাগ্রাফ মুছুন"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Section 3: Mission & Vision */}
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 space-y-4">
+                <h3 className="text-lg font-bold text-blue-800 flex items-center gap-2 border-b pb-2">
+                  <span>🎯</span> লক্ষ্য ও দৃষ্টিভঙ্গি (Mission & Vision)
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Mission */}
+                  <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm space-y-3">
+                    <h4 className="font-bold text-blue-700 flex items-center gap-1.5">
+                      <span>🎯</span> আমাদের লক্ষ্য (Mission)
+                    </h4>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">শিরোনাম</label>
+                      <input
+                        type="text"
+                        value={aboutData.missionTitle}
+                        onChange={(e) => setAboutData({ ...aboutData, missionTitle: e.target.value })}
+                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">বিবরণ</label>
+                      <textarea
+                        rows={3}
+                        value={aboutData.missionDescription}
+                        onChange={(e) => setAboutData({ ...aboutData, missionDescription: e.target.value })}
+                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Vision */}
+                  <div className="bg-white p-4 rounded-xl border border-green-100 shadow-sm space-y-3">
+                    <h4 className="font-bold text-green-700 flex items-center gap-1.5">
+                      <span>🔮</span> আমাদের দৃষ্টিভঙ্গি (Vision)
+                    </h4>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">শিরোনাম</label>
+                      <input
+                        type="text"
+                        value={aboutData.visionTitle}
+                        onChange={(e) => setAboutData({ ...aboutData, visionTitle: e.target.value })}
+                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">বিবরণ</label>
+                      <textarea
+                        rows={3}
+                        value={aboutData.visionDescription}
+                        onChange={(e) => setAboutData({ ...aboutData, visionDescription: e.target.value })}
+                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 4: Our Work Cards */}
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 space-y-4">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="text-lg font-bold text-blue-800 flex items-center gap-2">
+                    <span>🛠️</span> আমরা যা করি (Our Work Cards)
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newWork: WorkItem = {
+                        id: "work-" + Date.now(),
+                        icon: "🌟",
+                        title: "নতুন কার্যক্রম",
+                        description: "কার্যক্রমের বিস্তারিত বিবরণ লিখুন",
+                      };
+                      setAboutData({ ...aboutData, workItems: [...(aboutData.workItems || []), newWork] });
+                    }}
+                    className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 font-bold px-3 py-1.5 rounded-lg border border-blue-300 transition-colors"
+                  >
+                    ➕ নতুন কার্যক্রম কার্ড যোগ করুন
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {aboutData.workItems && aboutData.workItems.map((item, index) => (
+                    <div key={item.id || index} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = aboutData.workItems.filter((_, i) => i !== index);
+                          setAboutData({ ...aboutData, workItems: updated });
+                        }}
+                        className="absolute top-2 right-2 text-red-500 hover:bg-red-50 p-1 rounded transition-colors text-xs font-bold"
+                        title="কার্ড রিমুভ করুন"
+                      >
+                        ❌ রিমুভ
+                      </button>
+                      <div className="flex items-center gap-3">
+                        <div className="w-16">
+                          <label className="block text-[11px] font-semibold text-gray-500">ইমোজি</label>
+                          <input
+                            type="text"
+                            value={item.icon}
+                            onChange={(e) => {
+                              const updated = [...aboutData.workItems];
+                              updated[index].icon = e.target.value;
+                              setAboutData({ ...aboutData, workItems: updated });
+                            }}
+                            className="w-full text-center px-2 py-1 text-lg border border-gray-300 rounded"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-[11px] font-semibold text-gray-500">শিরোনাম</label>
+                          <input
+                            type="text"
+                            value={item.title}
+                            onChange={(e) => {
+                              const updated = [...aboutData.workItems];
+                              updated[index].title = e.target.value;
+                              setAboutData({ ...aboutData, workItems: updated });
+                            }}
+                            className="w-full px-3 py-1 text-sm border border-gray-300 rounded font-bold text-gray-800"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-gray-500">সংক্ষিপ্ত বিবরণ</label>
+                        <input
+                          type="text"
+                          value={item.description}
+                          onChange={(e) => {
+                            const updated = [...aboutData.workItems];
+                            updated[index].description = e.target.value;
+                            setAboutData({ ...aboutData, workItems: updated });
+                          }}
+                          className="w-full px-3 py-1 text-xs border border-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Section 5: Timeline / Milestones */}
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 space-y-4">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="text-lg font-bold text-blue-800 flex items-center gap-2">
+                    <span>🚀</span> আমাদের যাত্রা / মাইলস্টোন (Timeline)
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newMs: Milestone = {
+                        id: "ms-" + Date.now(),
+                        year: "২০২৬",
+                        event: "নতুন অর্জন বা কার্যক্রমের বিবরণ",
+                        icon: "🎉",
+                      };
+                      setAboutData({ ...aboutData, milestones: [...(aboutData.milestones || []), newMs] });
+                    }}
+                    className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 font-bold px-3 py-1.5 rounded-lg border border-blue-300 transition-colors"
+                  >
+                    ➕ নতুন মাইলস্টোন যোগ করুন
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {aboutData.milestones && aboutData.milestones.map((ms, index) => (
+                    <div key={ms.id || index} className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-sm flex flex-wrap items-center gap-3">
+                      <div className="w-14">
+                        <label className="block text-[10px] font-bold text-gray-400">ইমোজি</label>
+                        <input
+                          type="text"
+                          value={ms.icon}
+                          onChange={(e) => {
+                            const updated = [...aboutData.milestones];
+                            updated[index].icon = e.target.value;
+                            setAboutData({ ...aboutData, milestones: updated });
+                          }}
+                          className="w-full text-center px-1 py-1 text-base border border-gray-300 rounded"
+                        />
+                      </div>
+                      <div className="w-24">
+                        <label className="block text-[10px] font-bold text-gray-400">বছর (Year)</label>
+                        <input
+                          type="text"
+                          value={ms.year}
+                          onChange={(e) => {
+                            const updated = [...aboutData.milestones];
+                            updated[index].year = e.target.value;
+                            setAboutData({ ...aboutData, milestones: updated });
+                          }}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded font-bold text-blue-600"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-[200px]">
+                        <label className="block text-[10px] font-bold text-gray-400">মাইলস্টোন বিবরণ</label>
+                        <input
+                          type="text"
+                          value={ms.event}
+                          onChange={(e) => {
+                            const updated = [...aboutData.milestones];
+                            updated[index].event = e.target.value;
+                            setAboutData({ ...aboutData, milestones: updated });
+                          }}
+                          className="w-full px-3 py-1 text-sm border border-gray-300 rounded text-gray-700"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = aboutData.milestones.filter((_, i) => i !== index);
+                          setAboutData({ ...aboutData, milestones: updated });
+                        }}
+                        className="text-red-500 hover:bg-red-50 p-2 rounded transition-colors text-xs font-bold"
+                        title="মাইলস্টোন মুছুন"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Section 6: Team Members */}
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 space-y-4">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="text-lg font-bold text-blue-800 flex items-center gap-2">
+                    <span>👥</span> আমাদের টিম / কমিটি সদস্যবৃন্দ (Team Members)
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newMember: TeamMember = {
+                        id: "team-" + Date.now(),
+                        name: "নতুন সদস্য",
+                        role: "পদবী",
+                        emoji: "👨‍💼",
+                      };
+                      setAboutData({ ...aboutData, teamMembers: [...(aboutData.teamMembers || []), newMember] });
+                    }}
+                    className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 font-bold px-3 py-1.5 rounded-lg border border-blue-300 transition-colors"
+                  >
+                    ➕ নতুন টিম মেম্বার যোগ করুন
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {aboutData.teamMembers && aboutData.teamMembers.map((member, index) => (
+                    <div key={member.id || index} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative space-y-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = aboutData.teamMembers.filter((_, i) => i !== index);
+                          setAboutData({ ...aboutData, teamMembers: updated });
+                        }}
+                        className="absolute top-2 right-2 text-red-500 hover:bg-red-50 p-1 rounded transition-colors text-xs font-bold"
+                        title="সদস্য রিমুভ করুন"
+                      >
+                        ❌
+                      </button>
+                      <div className="w-16 mx-auto">
+                        <label className="block text-[10px] font-semibold text-gray-400 mb-0.5">ইমোজি</label>
+                        <input
+                          type="text"
+                          value={member.emoji}
+                          onChange={(e) => {
+                            const updated = [...aboutData.teamMembers];
+                            updated[index].emoji = e.target.value;
+                            setAboutData({ ...aboutData, teamMembers: updated });
+                          }}
+                          className="w-full text-center px-1 py-1 text-2xl border border-gray-300 rounded"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 mb-0.5">নাম</label>
+                        <input
+                          type="text"
+                          value={member.name}
+                          onChange={(e) => {
+                            const updated = [...aboutData.teamMembers];
+                            updated[index].name = e.target.value;
+                            setAboutData({ ...aboutData, teamMembers: updated });
+                          }}
+                          className="w-full text-center px-2 py-1 text-sm border border-gray-300 rounded font-bold text-gray-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-400 mb-0.5">পদবী</label>
+                        <input
+                          type="text"
+                          value={member.role}
+                          onChange={(e) => {
+                            const updated = [...aboutData.teamMembers];
+                            updated[index].role = e.target.value;
+                            setAboutData({ ...aboutData, teamMembers: updated });
+                          }}
+                          className="w-full text-center px-2 py-1 text-xs border border-gray-300 rounded text-blue-600"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+
+
+              {/* Save All Button at the Bottom */}
+              <div className="pt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsSavingAbout(true);
+                    await saveAboutDataToDb(aboutData);
+                    setIsSavingAbout(false);
+                    alert("'আমাদের সম্পর্কে' পেজের সমস্ত তথ্য সফলভাবে আপডেট ও সেভ করা হয়েছে!");
+                  }}
+                  disabled={isSavingAbout}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-8 py-3.5 rounded-xl shadow-xl hover:shadow-emerald-600/30 transition-all flex items-center gap-2 text-lg cursor-pointer"
+                >
+                  <span>💾</span>
+                  <span>{isSavingAbout ? "সেভ হচ্ছে..." : "সমস্ত পরিবর্তন সেভ করুন"}</span>
+                </button>
+              </div>
             </div>
           )}
 
