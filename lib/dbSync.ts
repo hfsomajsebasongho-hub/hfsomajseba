@@ -3,6 +3,7 @@ import {
   collection,
   doc,
   setDoc,
+  getDoc,
   getDocs,
   deleteDoc,
   onSnapshot,
@@ -212,17 +213,42 @@ let globalHasSeededAllUsers = false;
 let globalHasSeededCustomLedger = false;
 let globalHasSeededLedgerRequests = false;
 
+const checkIsSeeded = async (): Promise<boolean> => {
+  try {
+    const initDoc = await getDoc(doc(db, "settings", "initialization"));
+    if (initDoc.exists() && initDoc.data()?.seeded === true) {
+      return true;
+    }
+  } catch (e) {
+    console.warn("Error checking seed status:", e);
+  }
+  return false;
+};
+
+const markAsSeeded = async () => {
+  try {
+    await setDoc(doc(db, "settings", "initialization"), { seeded: true, updatedAt: Date.now() }, { merge: true });
+  } catch (e) {
+    console.warn("Error marking seed status:", e);
+  }
+};
+
 export const subscribeAllUsers = (onData: (users: UserData[]) => void) => {
   const colRef = collection(db, "allUsers");
 
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
     if (snapshot.empty && !globalHasSeededAllUsers) {
       globalHasSeededAllUsers = true;
-      await saveAllUsersToDb(INITIAL_USERS);
-      return;
+      const alreadySeeded = await checkIsSeeded();
+      if (!alreadySeeded) {
+        await saveAllUsersToDb(INITIAL_USERS);
+        await markAsSeeded();
+        return;
+      }
     }
     if (!snapshot.empty) {
       globalHasSeededAllUsers = true;
+      await markAsSeeded();
     }
 
     const list: UserData[] = snapshot.docs.map((docSnap) => ({
@@ -281,11 +307,16 @@ export const subscribeCustomLedger = (onData: (entries: LedgerEntry[]) => void) 
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
     if (snapshot.empty && !globalHasSeededCustomLedger) {
       globalHasSeededCustomLedger = true;
-      await saveCustomLedgerToDb(INITIAL_CUSTOM_ENTRIES);
-      return;
+      const alreadySeeded = await checkIsSeeded();
+      if (!alreadySeeded) {
+        await saveCustomLedgerToDb(INITIAL_CUSTOM_ENTRIES);
+        await markAsSeeded();
+        return;
+      }
     }
     if (!snapshot.empty) {
       globalHasSeededCustomLedger = true;
+      await markAsSeeded();
     }
 
     const list: LedgerEntry[] = snapshot.docs.map((docSnap) => ({
@@ -308,11 +339,16 @@ export const subscribeLedgerRequests = (onData: (requests: LedgerRequest[]) => v
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
     if (snapshot.empty && !globalHasSeededLedgerRequests) {
       globalHasSeededLedgerRequests = true;
-      await saveLedgerRequestsToDb(INITIAL_LEDGER_REQUESTS);
-      return;
+      const alreadySeeded = await checkIsSeeded();
+      if (!alreadySeeded) {
+        await saveLedgerRequestsToDb(INITIAL_LEDGER_REQUESTS);
+        await markAsSeeded();
+        return;
+      }
     }
     if (!snapshot.empty) {
       globalHasSeededLedgerRequests = true;
+      await markAsSeeded();
     }
 
     const list: LedgerRequest[] = snapshot.docs.map((docSnap) => ({

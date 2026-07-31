@@ -15,6 +15,8 @@ import {
   saveCustomLedgerToDb,
   saveLedgerRequestsToDb,
   saveAdminAccountsSecToDb,
+  deleteCustomLedgerFromDb,
+  deleteLedgerRequestFromDb,
 } from "@/lib/dbSync";
 
 interface DonationRecord {
@@ -566,6 +568,7 @@ export default function AdminPanel() {
   // Delete Ledger Request
   const deleteLedgerRequest = (id: string) => {
     if (window.confirm("এই অনুরোধটি স্থায়ীভাবে মুছে ফেলতে চান?")) {
+      deleteLedgerRequestFromDb(id);
       const updated = ledgerRequests.filter(r => r.id !== id);
       saveLedgerRequestsToDb(updated);
       setLedgerRequests(updated);
@@ -712,6 +715,9 @@ export default function AdminPanel() {
   const deleteLedgerItem = (item: LedgerEntry) => {
     if (!item.id) return;
     if (window.confirm(`আপনি কি "${item.donorName}"-এর এই হিসাবের এন্ট্রিটি মুছে ফেলতে চান?`)) {
+      if (item.id) {
+        deleteCustomLedgerFromDb(item.id);
+      }
       // 1. Remove from rawCustomLedger
       const updatedCustom = rawCustomLedger.filter((ce: any) => ce.id !== item.id && (!item.id || ce.transactionId !== item.id));
       setRawCustomLedger(updatedCustom);
