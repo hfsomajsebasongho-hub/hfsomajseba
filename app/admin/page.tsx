@@ -616,40 +616,8 @@ export default function AdminPanel() {
       pendingDonations: pendingDonationsData.length,
     });
 
-    // Load & Auto-seed sample ledger view requests (হিসাব দেখার অনুরোধ)
-    let savedLedgerRequests = JSON.parse(localStorage.getItem("ledgerViewRequests") || "[]");
-    if (!savedLedgerRequests || savedLedgerRequests.length === 0) {
-      savedLedgerRequests = [
-        {
-          id: "req-101",
-          requesterName: "মোঃ হাসান মাহমুদ",
-          phone: "01755667788",
-          email: "hasan@gmail.com",
-          requestDate: "২৮ মে ২০২৬",
-          reason: "বাৎসরিক সাধারণ সভার জন্য আয় ও খরচের সম্পূর্ণ হিসাব বিবরণী প্রয়োজন",
-          status: "pending",
-        },
-        {
-          id: "req-102",
-          requesterName: "সাদিয়া তানজিম",
-          phone: "01899887766",
-          email: "sadia@gmail.com",
-          requestDate: "২৬ মে ২০২৬",
-          reason: "সংগঠনের নিরিক্ষণ (Audit) কাজের তথ্য সংগ্রহ",
-          status: "pending",
-        },
-        {
-          id: "req-103",
-          requesterName: "আব্দুর রহমান",
-          phone: "01911223344",
-          email: "rahman@gmail.com",
-          requestDate: "২০ মে ২০২৬",
-          reason: "মাসিক অনুদানের ভাউচার যাচাইকরণ",
-          status: "approved",
-        }
-      ];
-      localStorage.setItem("ledgerViewRequests", JSON.stringify(savedLedgerRequests));
-    }
+    // Load ledger view requests (হিসাব দেখার অনুরোধ)
+    const savedLedgerRequests = JSON.parse(localStorage.getItem("ledgerViewRequests") || "[]");
     setLedgerRequests(savedLedgerRequests);
   };
 
