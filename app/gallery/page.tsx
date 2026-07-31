@@ -4,12 +4,11 @@ import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection,
-  addDoc,
-  getDocs,
+  setDoc,
+  getDoc,
   deleteDoc,
   doc,
-  query,
-  orderBy,
+  onSnapshot,
 } from "firebase/firestore";
 
 export interface GalleryPhoto {
@@ -34,62 +33,7 @@ const INITIAL_CATEGORIES = [
   "অন্যান্য",
 ];
 
-const INITIAL_PHOTOS: GalleryPhoto[] = [
-  {
-    id: "photo-1",
-    title: "বন্যা দুর্গতদের মাঝে খাদ্য ত্রাণ বিতরণ প্রোগ্রাম",
-    category: "ত্রাণ বিতরণ",
-    date: "২০২৬-০৫-১৫",
-    imageUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?q=80&w=1000&auto=format&fit=crop",
-    description: "HF সমাজসেবা সংঘের পক্ষ থেকে বন্যাকবলিত এলাকায় ৫০০টি পরিবারের মাঝে জরুরি খাদ্যসামগ্রী ও সুপেয় পানি বিতরণ করা হয়।",
-    uploadedBy: "Admin",
-  },
-  {
-    id: "photo-2",
-    title: "বিনামূল্যে রক্তদান ও ব্লাড গ্রুপিং ক্যাম্পেইন",
-    category: "রক্তদান",
-    date: "২০২৬-০৪-১০",
-    imageUrl: "https://images.unsplash.com/photo-1615461066841-6116e61058f4?q=80&w=1000&auto=format&fit=crop",
-    description: "বার্ষিক রক্তদান কর্মসূচিতে বিপুল সংখ্যক স্বেচ্ছাসেবী ও স্থানীয় তরুণরা রক্তদান করেন।",
-    uploadedBy: "Admin",
-  },
-  {
-    id: "photo-3",
-    title: "শীতার্ত মানুষের মাঝে শীতবস্ত্র ও কম্বল বিতরণ",
-    category: "সমাজসেবা",
-    date: "২০২৬-০১-২০",
-    imageUrl: "https://images.unsplash.com/photo-1593113598332-cd288d649433?q=80&w=1000&auto=format&fit=crop",
-    description: "তীব্র শীতে অসহায় ও বয়স্ক ৩‌০০ জন মানুষের হাতে কম্বল ও গরম কাপড় তুলে দেওয়া হয়।",
-    uploadedBy: "Admin",
-  },
-  {
-    id: "photo-4",
-    title: "ফ্রি ফ্রন্টলাইন মেডিকেল চেকআপ শিবির",
-    category: "চিকিৎসা শিবির",
-    date: "২০২৫-১১-৩০",
-    imageUrl: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?q=80&w=1000&auto=format&fit=crop",
-    description: "অভিজ্ঞ চিকিৎসকদের সমন্বয়ে দিনব্যাপী ফ্রি ডায়াবেটিস পরীক্ষা, স্বাস্থ্য পরামর্শ ও প্রাথমিক ওষুধ বিতরণ।",
-    uploadedBy: "Admin",
-  },
-  {
-    id: "photo-5",
-    title: "বৃক্ষরোপণ অভিযান ও পরিবেশ সচেতনতা",
-    category: "ইভেন্ট",
-    date: "২০২৫-০৯-০৫",
-    imageUrl: "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?q=80&w=1000&auto=format&fit=crop",
-    description: "পরিবেশ রক্ষায় ১০০টি ফলজ ও ঔষধি গাছের চারা রোপণ ও সাধারণ মানুষের মাঝে বিতরণ।",
-    uploadedBy: "Admin",
-  },
-  {
-    id: "photo-6",
-    title: "শিক্ষাসামগ্রী ও ব্যাগ বিতরণ উৎসব",
-    category: "সমাজসেবা",
-    date: "২০২৫-৭-১২",
-    imageUrl: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=1000&auto=format&fit=crop",
-    description: "সুবিধাবঞ্চিত ৫০ জন প্রাথমিক বিদ্যালয়ের শিক্ষার্থীদের হাতে নতুন বই, খাতা, কলম ও ব্যাগ তুলে দেওয়া হলো।",
-    uploadedBy: "Admin",
-  },
-];
+const INITIAL_PHOTOS: GalleryPhoto[] = [];
 
 export default function GalleryPage() {
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
@@ -129,59 +73,69 @@ export default function GalleryPage() {
     const isLogged = localStorage.getItem("isAdminLoggedIn") === "true";
     setIsAdminLoggedIn(isLogged);
 
-    const fetchPhotos = async () => {
+    const checkIsGallerySeeded = async (): Promise<boolean> => {
       try {
-        const q = query(collection(db, "galleryPhotos"), orderBy("createdAt", "desc"));
-        const fetchPromise = getDocs(q);
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Firestore timeout")), 3000)
-        );
-        const snapshot = await Promise.race([fetchPromise, timeoutPromise]);
-        if (snapshot && !snapshot.empty) {
-          const firestorePhotos: GalleryPhoto[] = snapshot.docs.map((docSnap) => ({
-            id: docSnap.id,
-            firestoreDocId: docSnap.id,
-            ...(docSnap.data() as Omit<GalleryPhoto, "id">),
-          }));
-          setPhotos(firestorePhotos);
-          localStorage.setItem("galleryPhotos", JSON.stringify(firestorePhotos));
+        const initDoc = await getDoc(doc(db, "settings", "galleryInitialized"));
+        if (initDoc.exists() && initDoc.data()?.seeded === true) {
+          return true;
+        }
+      } catch (e) {
+        console.warn("Error checking gallery seed status:", e);
+      }
+      return false;
+    };
 
-          const customCats = Array.from(new Set(firestorePhotos.map((p) => p.category)));
-          const mergedCats = Array.from(new Set([...INITIAL_CATEGORIES, ...customCats]));
-          setCategories(mergedCats);
-          localStorage.setItem("galleryCategories", JSON.stringify(mergedCats));
+    const markGallerySeeded = async () => {
+      try {
+        await setDoc(doc(db, "settings", "galleryInitialized"), { seeded: true, updatedAt: Date.now() }, { merge: true });
+      } catch (e) {
+        console.warn("Error marking gallery seed status:", e);
+      }
+    };
+
+    const colRef = collection(db, "galleryPhotos");
+    const unsubscribe = onSnapshot(colRef, async (snapshot) => {
+      if (snapshot.empty) {
+        const alreadySeeded = await checkIsGallerySeeded();
+        if (!alreadySeeded) {
+          for (const photo of INITIAL_PHOTOS) {
+            await setDoc(doc(db, "galleryPhotos", photo.id), { ...photo, createdAt: Date.now() }, { merge: true });
+          }
+          await markGallerySeeded();
           return;
         }
-      } catch (err) {
-        console.warn("Firestore fetch warning, loading local fallback:", err);
+        setPhotos([]);
+        localStorage.setItem("galleryPhotos", JSON.stringify([]));
+        return;
       }
 
-      const savedCategories = localStorage.getItem("galleryCategories");
-      if (savedCategories) {
-        try {
-          const parsedCat = JSON.parse(savedCategories);
-          if (Array.isArray(parsedCat) && parsedCat.length > 0) {
-            setCategories(parsedCat);
-          }
-        } catch (e) {}
-      }
+      await markGallerySeeded();
+      const firestorePhotos: GalleryPhoto[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        firestoreDocId: docSnap.id,
+        ...(docSnap.data() as Omit<GalleryPhoto, "id">),
+      }));
 
+      firestorePhotos.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+      setPhotos(firestorePhotos);
+      localStorage.setItem("galleryPhotos", JSON.stringify(firestorePhotos));
+
+      const customCats = Array.from(new Set(firestorePhotos.map((p) => p.category)));
+      const mergedCats = Array.from(new Set([...INITIAL_CATEGORIES, ...customCats]));
+      setCategories(mergedCats);
+      localStorage.setItem("galleryCategories", JSON.stringify(mergedCats));
+    }, (err) => {
+      console.warn("Firestore gallery subscription error, loading fallback:", err);
       const saved = localStorage.getItem("galleryPhotos");
       if (saved) {
         try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setPhotos(parsed);
-            return;
-          }
+          setPhotos(JSON.parse(saved));
         } catch (e) {}
       }
+    });
 
-      setPhotos(INITIAL_PHOTOS);
-      localStorage.setItem("galleryPhotos", JSON.stringify(INITIAL_PHOTOS));
-    };
-
-    fetchPhotos();
+    return () => unsubscribe();
   }, []);
 
   const savePhotosToStorage = (updatedPhotos: GalleryPhoto[]) => {
@@ -189,7 +143,7 @@ export default function GalleryPage() {
     localStorage.setItem("galleryPhotos", JSON.stringify(updatedPhotos));
   };
 
-  const handleAddPhotoSubmit = (e: React.FormEvent) => {
+  const handleAddPhotoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) {
       setUploadError("অনুগ্রহ করে ছবির শিরোনাম প্রদান করুন।");
@@ -207,16 +161,26 @@ export default function GalleryPage() {
     setIsSubmitting(true);
     setUploadError("");
 
+    const photoCategory = isCreatingCategory && customCategory.trim() ? customCategory.trim() : newCategory;
     const todayDate = new Date().toISOString().split("T")[0];
+    const photoId = "photo-" + Date.now();
     const newPhoto: GalleryPhoto = {
-      id: "photo-" + Date.now(),
+      id: photoId,
+      firestoreDocId: photoId,
       title: newTitle.trim(),
-      category: newCategory,
+      category: photoCategory,
       date: todayDate,
       imageUrl: newImageUrl.trim(),
       uploadedBy: localStorage.getItem("adminUsername") || "Admin",
       createdAt: Date.now(),
     };
+
+    try {
+      await setDoc(doc(db, "galleryPhotos", photoId), newPhoto, { merge: true });
+      await setDoc(doc(db, "settings", "galleryInitialized"), { seeded: true, updatedAt: Date.now() }, { merge: true });
+    } catch (err) {
+      console.warn("Error saving photo to Firestore:", err);
+    }
 
     const updated = [newPhoto, ...photos];
     savePhotosToStorage(updated);
@@ -224,17 +188,26 @@ export default function GalleryPage() {
     // Reset form & close modal instantly
     setNewTitle("");
     setNewCategory("ত্রাণ বিতরণ");
+    setIsCreatingCategory(false);
+    setCustomCategory("");
     setNewImageUrl("");
     setUploadError("");
     setIsSubmitting(false);
     setShowUploadModal(false);
   };
 
-  const handleDeletePhoto = (id: string, e?: React.MouseEvent) => {
+  const handleDeletePhoto = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!window.confirm("আপনি কি নিশ্চিত যে এই ছবিটি মুছে ফেলতে চান?")) return;
 
-    const updated = photos.filter((p) => p.id !== id);
+    try {
+      await deleteDoc(doc(db, "galleryPhotos", id));
+      await setDoc(doc(db, "settings", "galleryInitialized"), { seeded: true, updatedAt: Date.now() }, { merge: true });
+    } catch (err) {
+      console.warn("Error deleting photo from Firestore:", err);
+    }
+
+    const updated = photos.filter((p) => p.id !== id && p.firestoreDocId !== id);
     savePhotosToStorage(updated);
     if (selectedPhoto?.id === id) {
       setSelectedPhoto(null);
