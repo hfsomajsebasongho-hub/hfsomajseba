@@ -6,7 +6,6 @@ import {
   getDocs,
   deleteDoc,
   onSnapshot,
-  query,
 } from "firebase/firestore";
 
 export interface DonationRecord {
@@ -126,7 +125,7 @@ const INITIAL_CUSTOM_ENTRIES: LedgerEntry[] = [
 
 const INITIAL_USERS: UserData[] = [
   {
-    id: "user-init-1",
+    id: "usr_01711223344",
     name: "মোঃ রফিকুল ইসলাম",
     email: "rafiq@gmail.com",
     phone: "01711223344",
@@ -146,7 +145,7 @@ const INITIAL_USERS: UserData[] = [
     ],
   },
   {
-    id: "user-init-2",
+    id: "usr_01812345678",
     name: "আব্দুল করিম",
     email: "karim@gmail.com",
     phone: "01812345678",
@@ -215,7 +214,6 @@ export const subscribeAllUsers = (onData: (users: UserData[]) => void) => {
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
     if (snapshot.empty && !hasSeeded) {
       hasSeeded = true;
-      // If Firestore is empty, seed with INITIAL_USERS or local storage users
       const local = typeof window !== "undefined" ? localStorage.getItem("allUsers") : null;
       let usersToSeed = INITIAL_USERS;
       if (local) {
@@ -237,6 +235,7 @@ export const subscribeAllUsers = (onData: (users: UserData[]) => void) => {
 
     if (typeof window !== "undefined") {
       localStorage.setItem("allUsers", JSON.stringify(list));
+      localStorage.setItem("hasInitializedData", "true");
     }
     onData(list);
   }, (err) => {
@@ -423,16 +422,16 @@ export const saveAllUsersToDb = async (users: UserData[]) => {
     localStorage.setItem("allUsers", JSON.stringify(users));
   }
   try {
-    // Write each user to Firestore
+    const activeDocIds = new Set<string>();
     for (const user of users) {
       const docId = user.id || makeDocId("usr", user.phone || user.email || user.name);
+      user.id = docId;
+      activeDocIds.add(docId);
       await setDoc(doc(db, "allUsers", docId), { ...user, id: docId }, { merge: true });
     }
-    // Remove deleted docs from Firestore if array shrank
     const snap = await getDocs(collection(db, "allUsers"));
-    const currentDocIds = new Set(users.map(u => u.id).filter(Boolean));
     for (const docSnap of snap.docs) {
-      if (currentDocIds.size > 0 && !currentDocIds.has(docSnap.id)) {
+      if (!activeDocIds.has(docSnap.id)) {
         await deleteDoc(doc(db, "allUsers", docSnap.id));
       }
     }
@@ -446,14 +445,16 @@ export const savePendingUsersToDb = async (pendingUsers: PendingUser[]) => {
     localStorage.setItem("pendingUsers", JSON.stringify(pendingUsers));
   }
   try {
+    const activeDocIds = new Set<string>();
     for (const pUser of pendingUsers) {
       const docId = pUser.id || makeDocId("pu", pUser.phone || pUser.email || pUser.name);
+      pUser.id = docId;
+      activeDocIds.add(docId);
       await setDoc(doc(db, "pendingUsers", docId), { ...pUser, id: docId }, { merge: true });
     }
     const snap = await getDocs(collection(db, "pendingUsers"));
-    const currentDocIds = new Set(pendingUsers.map(u => u.id).filter(Boolean));
     for (const docSnap of snap.docs) {
-      if (!currentDocIds.has(docSnap.id)) {
+      if (!activeDocIds.has(docSnap.id)) {
         await deleteDoc(doc(db, "pendingUsers", docSnap.id));
       }
     }
@@ -467,14 +468,16 @@ export const savePendingDonationsToDb = async (pendingDonations: PendingDonation
     localStorage.setItem("pendingDonations", JSON.stringify(pendingDonations));
   }
   try {
+    const activeDocIds = new Set<string>();
     for (const pDonation of pendingDonations) {
       const docId = pDonation.id || makeDocId("pd", pDonation.transactionId || `${pDonation.donorPhone}_${pDonation.date}`);
+      pDonation.id = docId;
+      activeDocIds.add(docId);
       await setDoc(doc(db, "pendingDonations", docId), { ...pDonation, id: docId }, { merge: true });
     }
     const snap = await getDocs(collection(db, "pendingDonations"));
-    const currentDocIds = new Set(pendingDonations.map(d => d.id).filter(Boolean));
     for (const docSnap of snap.docs) {
-      if (!currentDocIds.has(docSnap.id)) {
+      if (!activeDocIds.has(docSnap.id)) {
         await deleteDoc(doc(db, "pendingDonations", docSnap.id));
       }
     }
@@ -488,14 +491,16 @@ export const saveCustomLedgerToDb = async (entries: LedgerEntry[]) => {
     localStorage.setItem("customLedgerEntries", JSON.stringify(entries));
   }
   try {
+    const activeDocIds = new Set<string>();
     for (const entry of entries) {
       const docId = entry.id || makeDocId("leg", `${entry.donorName}_${entry.date}_${entry.incomeAmount || entry.expenseAmount}`);
+      entry.id = docId;
+      activeDocIds.add(docId);
       await setDoc(doc(db, "customLedgerEntries", docId), { ...entry, id: docId }, { merge: true });
     }
     const snap = await getDocs(collection(db, "customLedgerEntries"));
-    const currentDocIds = new Set(entries.map(e => e.id).filter(Boolean));
     for (const docSnap of snap.docs) {
-      if (!currentDocIds.has(docSnap.id)) {
+      if (!activeDocIds.has(docSnap.id)) {
         await deleteDoc(doc(db, "customLedgerEntries", docSnap.id));
       }
     }
@@ -509,14 +514,16 @@ export const saveLedgerRequestsToDb = async (requests: LedgerRequest[]) => {
     localStorage.setItem("ledgerViewRequests", JSON.stringify(requests));
   }
   try {
+    const activeDocIds = new Set<string>();
     for (const req of requests) {
       const docId = req.id || makeDocId("req", req.phone || req.requesterName);
+      req.id = docId;
+      activeDocIds.add(docId);
       await setDoc(doc(db, "ledgerViewRequests", docId), { ...req, id: docId }, { merge: true });
     }
     const snap = await getDocs(collection(db, "ledgerViewRequests"));
-    const currentDocIds = new Set(requests.map(r => r.id).filter(Boolean));
     for (const docSnap of snap.docs) {
-      if (!currentDocIds.has(docSnap.id)) {
+      if (!activeDocIds.has(docSnap.id)) {
         await deleteDoc(doc(db, "ledgerViewRequests", docSnap.id));
       }
     }
