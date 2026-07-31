@@ -209,11 +209,13 @@ const makeDocId = (prefix: string, keyVal?: string) => {
 
 export const subscribeAllUsers = (onData: (users: UserData[]) => void) => {
   const colRef = collection(db, "allUsers");
-  let hasSeeded = false;
 
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
-    if (snapshot.empty && !hasSeeded) {
-      hasSeeded = true;
+    const isSeeded = typeof window !== "undefined" && localStorage.getItem("hasSeeded_allUsers") === "true";
+    if (snapshot.empty && !isSeeded) {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("hasSeeded_allUsers", "true");
+      }
       const local = typeof window !== "undefined" ? localStorage.getItem("allUsers") : null;
       let usersToSeed = INITIAL_USERS;
       if (local) {
@@ -235,6 +237,7 @@ export const subscribeAllUsers = (onData: (users: UserData[]) => void) => {
 
     if (typeof window !== "undefined") {
       localStorage.setItem("allUsers", JSON.stringify(list));
+      localStorage.setItem("hasSeeded_allUsers", "true");
       localStorage.setItem("hasInitializedData", "true");
     }
     onData(list);
@@ -305,11 +308,13 @@ export const subscribePendingDonations = (onData: (donations: PendingDonation[])
 
 export const subscribeCustomLedger = (onData: (entries: LedgerEntry[]) => void) => {
   const colRef = collection(db, "customLedgerEntries");
-  let hasSeeded = false;
 
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
-    if (snapshot.empty && !hasSeeded) {
-      hasSeeded = true;
+    const isSeeded = typeof window !== "undefined" && localStorage.getItem("hasSeeded_customLedgerEntries") === "true";
+    if (snapshot.empty && !isSeeded) {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("hasSeeded_customLedgerEntries", "true");
+      }
       const local = typeof window !== "undefined" ? localStorage.getItem("customLedgerEntries") : null;
       let entriesToSeed = INITIAL_CUSTOM_ENTRIES;
       if (local) {
@@ -331,6 +336,7 @@ export const subscribeCustomLedger = (onData: (entries: LedgerEntry[]) => void) 
 
     if (typeof window !== "undefined") {
       localStorage.setItem("customLedgerEntries", JSON.stringify(list));
+      localStorage.setItem("hasSeeded_customLedgerEntries", "true");
     }
     onData(list);
   }, (err) => {
@@ -348,11 +354,13 @@ export const subscribeCustomLedger = (onData: (entries: LedgerEntry[]) => void) 
 
 export const subscribeLedgerRequests = (onData: (requests: LedgerRequest[]) => void) => {
   const colRef = collection(db, "ledgerViewRequests");
-  let hasSeeded = false;
 
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
-    if (snapshot.empty && !hasSeeded) {
-      hasSeeded = true;
+    const isSeeded = typeof window !== "undefined" && localStorage.getItem("hasSeeded_ledgerViewRequests") === "true";
+    if (snapshot.empty && !isSeeded) {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("hasSeeded_ledgerViewRequests", "true");
+      }
       const local = typeof window !== "undefined" ? localStorage.getItem("ledgerViewRequests") : null;
       let reqsToSeed = INITIAL_LEDGER_REQUESTS;
       if (local) {
@@ -374,6 +382,7 @@ export const subscribeLedgerRequests = (onData: (requests: LedgerRequest[]) => v
 
     if (typeof window !== "undefined") {
       localStorage.setItem("ledgerViewRequests", JSON.stringify(list));
+      localStorage.setItem("hasSeeded_ledgerViewRequests", "true");
     }
     onData(list);
   }, (err) => {
@@ -420,6 +429,7 @@ export const subscribeAdminAccounts = (onData: (accountsSecStr: string) => void)
 export const saveAllUsersToDb = async (users: UserData[]) => {
   if (typeof window !== "undefined") {
     localStorage.setItem("allUsers", JSON.stringify(users));
+    localStorage.setItem("hasSeeded_allUsers", "true");
   }
   try {
     const activeDocIds = new Set<string>();
@@ -489,6 +499,7 @@ export const savePendingDonationsToDb = async (pendingDonations: PendingDonation
 export const saveCustomLedgerToDb = async (entries: LedgerEntry[]) => {
   if (typeof window !== "undefined") {
     localStorage.setItem("customLedgerEntries", JSON.stringify(entries));
+    localStorage.setItem("hasSeeded_customLedgerEntries", "true");
   }
   try {
     const activeDocIds = new Set<string>();
@@ -512,6 +523,7 @@ export const saveCustomLedgerToDb = async (entries: LedgerEntry[]) => {
 export const saveLedgerRequestsToDb = async (requests: LedgerRequest[]) => {
   if (typeof window !== "undefined") {
     localStorage.setItem("ledgerViewRequests", JSON.stringify(requests));
+    localStorage.setItem("hasSeeded_ledgerViewRequests", "true");
   }
   try {
     const activeDocIds = new Set<string>();
