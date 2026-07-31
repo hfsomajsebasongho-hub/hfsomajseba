@@ -35,6 +35,7 @@ interface UserData {
   totalDonation: number;
   donationCount: number;
   joinDate: string;
+  password?: string;
   donations: Donation[];
 }
 
@@ -46,6 +47,10 @@ export default function ProfilePage() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
   
+  // Real-time Firestore Users State
+  const [allUsersState, setAllUsersState] = useState<any[]>([]);
+  const [pendingUsersState, setPendingUsersState] = useState<any[]>([]);
+
   // Login form state
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -388,7 +393,7 @@ export default function ProfilePage() {
     }
   };
 
-  // Load user data from localStorage on mount and when page gets focus
+  // Load user data from localStorage on mount, subscribe to Firestore, and when page gets focus
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -396,6 +401,20 @@ export default function ProfilePage() {
         setShowLogin(false);
       }
     }
+
+    const unsubAllUsers = subscribeAllUsers((users) => {
+      setAllUsersState(users);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("allUsers", JSON.stringify(users));
+      }
+    });
+
+    const unsubPendingUsers = subscribePendingUsers((pending) => {
+      setPendingUsersState(pending);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("pendingUsers", JSON.stringify(pending));
+      }
+    });
 
     const loadUserData = () => {
       const savedUser = localStorage.getItem("userData");
@@ -511,6 +530,8 @@ export default function ProfilePage() {
     window.addEventListener("focus", loadUserData);
     
     return () => {
+      unsubAllUsers();
+      unsubPendingUsers();
       window.removeEventListener("focus", loadUserData);
     };
   }, []);
@@ -527,6 +548,8 @@ export default function ProfilePage() {
     setLoginError("");
     
     const loginInput = loginEmail.trim();
+    const loginInputPhoneClean = loginInput.replace(/[^0-9]/g, "");
+
     if (!loginInput) {
       setLoginError("মোবাইল নম্বর বা ইমেইল দিন");
       return;
@@ -540,35 +563,28 @@ export default function ProfilePage() {
       return;
     }
     
-    // 1. Check if user is in pendingUsers (not approved yet by Admin)
-    const pendingUsers = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
-    const pendingUser = pendingUsers.find(
-      (u: any) => u.phone === loginInput || (u.email && u.email !== "-" && u.email === loginInput)
-    );
-    
-    if (pendingUser) {
-      if (pendingUser.status === "pending") {
-        setLoginError("⏳ এপ্রুভের জন্য অপেক্ষা করুন। (এডমিন অনুমোদনের পর লগইন করতে পারবেন)");
-        return;
-      } else if (pendingUser.status === "rejected") {
-        setLoginError("❌ আপনার অ্যাকাউন্ট বাতিল করা হয়েছে। আমাদের সাথে যোগাযোগ করুন।");
-        return;
-      }
-    }
-    
-    // 2. Check in allUsers if approved
-    const allUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
-    const foundUser = allUsers.find(
-      (u: any) => u.phone === loginInput || (u.email && u.email !== "-" && u.email === loginInput)
-    );
-    
+    const allUsers = allUsersState.length > 0
+      ? allUsersState
+      : JSON.parse(localStorage.getItem("allUsers") || "[]");
+
+    const pendingUsers = pendingUsersState.length > 0
+      ? pendingUsersState
+      : JSON.parse(localStorage.getItem("pendingUsers") || "[]");
+
+    const matchUser = (u: any) => {
+      const uPhoneClean = (u.phone || "").replace(/[^0-9]/g, "");
+      const phoneMatch = Boolean(loginInputPhoneClean && uPhoneClean && uPhoneClean === loginInputPhoneClean) || u.phone === loginInput;
+      const emailMatch = Boolean(u.email && u.email !== "-" && u.email.toLowerCase() === loginInput.toLowerCase());
+      return phoneMatch || emailMatch;
+    };
+
+    const foundUser = allUsers.find(matchUser);
+    const pendingUser = pendingUsers.find(matchUser);
+
     if (foundUser) {
-      // Check if user has pending status
-      const isPending = pendingUsers.some(
-        (u: any) => (u.phone === loginInput || (u.email && u.email !== "-" && u.email === loginInput)) && u.status === "pending"
-      );
-      if (isPending) {
-        setLoginError("⏳ এপ্রুভের জন্য অপেক্ষা করুন। (এডমিন অনুমোদনের পর লগইন করতে পারবেন)");
+      // Check password if stored
+      if (foundUser.password && foundUser.password !== loginPassword) {
+        setLoginError("❌ পাসওয়ার্ড ভুল হয়েছে");
         return;
       }
 
@@ -577,10 +593,12 @@ export default function ProfilePage() {
         name: foundUser.name,
         email: foundUser.email || "-",
         phone: foundUser.phone,
+        address: foundUser.address || "-",
         bloodGroup: foundUser.bloodGroup || "",
         totalDonation: foundUser.totalDonation || 0,
         donationCount: foundUser.donationCount || 0,
         joinDate: foundUser.joinDate || "",
+        password: foundUser.password,
         donations: foundUser.donations || [],
       };
       
@@ -588,12 +606,50 @@ export default function ProfilePage() {
       setUserData(userToLoad);
       setIsLoggedIn(true);
       localStorage.setItem("isLoggedIn", "true");
-      // Clear form
       setLoginEmail("");
       setLoginPassword("");
-    } else {
-      setLoginError("⏳ এপ্রুভের জন্য অপেক্ষা করুন। (প্রথমে রেজিস্টার করুন এবং এডমিন অনুমোদনের পর লগইন করুন)");
+      setLoginError("");
+      return;
     }
+
+    if (pendingUser) {
+      if (pendingUser.status === "pending") {
+        setLoginError("⏳ এপ্রুভের জন্য অপেক্ষা করুন। (এডমিন অনুমোদনের পর লগইন করতে পারবেন)");
+        return;
+      } else if (pendingUser.status === "rejected") {
+        setLoginError("❌ আপনার অ্যাকাউন্ট বাতিল করা হয়েছে। আমাদের সাথে যোগাযোগ করুন।");
+        return;
+      } else if (pendingUser.status === "approved") {
+        if (pendingUser.password && pendingUser.password !== loginPassword) {
+          setLoginError("❌ পাসওয়ার্ড ভুল হয়েছে");
+          return;
+        }
+
+        const approvedUserToLoad: UserData = {
+          name: pendingUser.name,
+          email: pendingUser.email || "-",
+          phone: pendingUser.phone,
+          address: pendingUser.address || "-",
+          bloodGroup: pendingUser.bloodGroup || "",
+          totalDonation: 0,
+          donationCount: 0,
+          joinDate: pendingUser.registrationDate || "",
+          password: pendingUser.password,
+          donations: [],
+        };
+        
+        localStorage.setItem("userData", JSON.stringify(approvedUserToLoad));
+        setUserData(approvedUserToLoad);
+        setIsLoggedIn(true);
+        localStorage.setItem("isLoggedIn", "true");
+        setLoginEmail("");
+        setLoginPassword("");
+        setLoginError("");
+        return;
+      }
+    }
+
+    setLoginError("⏳ এপ্রুভের জন্য অপেক্ষা করুন। (প্রথমে রেজিস্টার করুন এবং এডমিন অনুমোদনের পর লগইন করুন)");
   };
 
   // Handle Registration
@@ -653,6 +709,7 @@ export default function ProfilePage() {
       bloodGroup: regBloodGroup,
       registrationDate: banglaDate,
       status: "pending" as const,
+      password: regPassword,
     };
 
     addPendingUserToDb(newPendingUser);

@@ -38,6 +38,7 @@ interface UserData {
   totalDonation: number;
   donationCount: number;
   joinDate: string;
+  password?: string;
   donations?: DonationRecord[];
 }
 
@@ -62,6 +63,7 @@ interface PendingUser {
   bloodGroup: string;
   registrationDate: string;
   status: "pending" | "approved" | "rejected";
+  password?: string;
 }
 
 interface LedgerEntry {
@@ -827,6 +829,7 @@ export default function AdminPanel() {
         address: targetUser.address || "-",
         bloodGroup: targetUser.bloodGroup,
         joinDate: targetUser.registrationDate,
+        password: targetUser.password,
         totalDonation: 0,
         donationCount: 0,
         donations: [],
@@ -842,6 +845,7 @@ export default function AdminPanel() {
         updatedAllUsers[existingIdx] = {
           ...updatedAllUsers[existingIdx],
           ...approvedUser,
+          password: targetUser.password || updatedAllUsers[existingIdx].password,
           totalDonation: updatedAllUsers[existingIdx].totalDonation || 0,
           donationCount: updatedAllUsers[existingIdx].donationCount || 0,
           donations: updatedAllUsers[existingIdx].donations || [],

@@ -29,6 +29,7 @@ export interface UserData {
   totalDonation: number;
   donationCount: number;
   joinDate: string;
+  password?: string;
   donations?: DonationRecord[];
 }
 
@@ -41,6 +42,7 @@ export interface PendingUser {
   bloodGroup: string;
   registrationDate: string;
   status: "pending" | "approved" | "rejected";
+  password?: string;
 }
 
 export interface PendingDonation {
