@@ -4,6 +4,14 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import DonationReceipt from "../components/DonationReceipt";
 import DonationForm from "../components/DonationForm";
+import {
+  saveLedgerRequestsToDb,
+  savePendingUsersToDb,
+  saveAllUsersToDb,
+  subscribePendingUsers,
+  subscribeAllUsers,
+  subscribeLedgerRequests,
+} from "@/lib/dbSync";
 
 // User data type
 interface Donation {
@@ -125,6 +133,7 @@ export default function ProfilePage() {
     }
 
     localStorage.setItem("ledgerViewRequests", JSON.stringify(requests));
+    saveLedgerRequestsToDb(requests);
     setUserLedgerRequest(newReq);
     alert("আপনার আয়-ব্যয় হিসাব দেখার অনুরোধটি এডমিন প্যানেলে সফলভাবে পাঠানো হয়েছে। এডমিন অনুমোদন করলে আপনি সরাসরি PDF রিপোর্ট ডাউনলোড করে দেখতে পারবেন।");
   };
@@ -668,6 +677,7 @@ export default function ProfilePage() {
       pendingUsers[existingPendingIndex] = newPendingUser;
     }
     localStorage.setItem("pendingUsers", JSON.stringify(pendingUsers));
+    savePendingUsersToDb(pendingUsers);
     
     // Show success message
     setRegSuccess(true);
@@ -776,6 +786,7 @@ export default function ProfilePage() {
       });
     }
     localStorage.setItem("allUsers", JSON.stringify(allUsers));
+    saveAllUsersToDb(allUsers);
     
     setIsEditing(false);
   };

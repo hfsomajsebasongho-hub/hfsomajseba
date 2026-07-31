@@ -2,6 +2,20 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import {
+  subscribeAllUsers,
+  subscribePendingUsers,
+  subscribePendingDonations,
+  subscribeCustomLedger,
+  subscribeLedgerRequests,
+  subscribeAdminAccounts,
+  saveAllUsersToDb,
+  savePendingUsersToDb,
+  savePendingDonationsToDb,
+  saveCustomLedgerToDb,
+  saveLedgerRequestsToDb,
+  saveAdminAccountsSecToDb,
+} from "@/lib/dbSync";
 
 interface DonationRecord {
   amount: number;
@@ -214,7 +228,7 @@ export default function AdminPanel() {
     return accounts;
   };
 
-  // Check admin login status on component mount
+  // Check admin login status on component mount and subscribe to Firestore
   useEffect(() => {
     const checkAdminLoginStatus = () => {
       localStorage.removeItem("adminAccounts");
@@ -228,6 +242,24 @@ export default function AdminPanel() {
     };
 
     checkAdminLoginStatus();
+
+    // Setup Firestore real-time subscriptions across all browsers & devices
+    const unsubAllUsers = subscribeAllUsers(() => {
+      loadAllData();
+    });
+    const unsubPendingUsers = subscribePendingUsers(() => {
+      loadAllData();
+    });
+    const unsubPendingDonations = subscribePendingDonations(() => {
+      loadAllData();
+    });
+    const unsubCustomLedger = subscribeCustomLedger(() => {
+      loadAllData();
+    });
+    const unsubLedgerRequests = subscribeLedgerRequests(() => {
+      loadAllData();
+    });
+    const unsubAdminAccounts = subscribeAdminAccounts(() => {});
 
     // Check URL parameters and custom events
     if (typeof window !== "undefined") {
@@ -262,6 +294,12 @@ export default function AdminPanel() {
     // Check admin login status when window gets focus
     window.addEventListener("focus", checkAdminLoginStatus);
     return () => {
+      unsubAllUsers();
+      unsubPendingUsers();
+      unsubPendingDonations();
+      unsubCustomLedger();
+      unsubLedgerRequests();
+      unsubAdminAccounts();
       window.removeEventListener("focus", checkAdminLoginStatus);
       window.removeEventListener("openAdminPasswordModal", handleOpenPasswordModalEvent);
     };
@@ -359,7 +397,9 @@ export default function AdminPanel() {
       currentAccounts.push({ username: activeUsername, password: newPasswordInput });
     }
 
-    localStorage.setItem("adminAccounts_sec", encodeSecret(JSON.stringify(currentAccounts)));
+    const secStr = encodeSecret(JSON.stringify(currentAccounts));
+    localStorage.setItem("adminAccounts_sec", secStr);
+    saveAdminAccountsSecToDb(secStr);
     localStorage.removeItem("adminAccounts");
     
     setPasswordSuccess("পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে!");
@@ -716,6 +756,7 @@ export default function AdminPanel() {
     if (window.confirm("এই হিসাব দেখার অনুরোধটি অনুমোদন করতে চান?")) {
       const updated = ledgerRequests.map(r => r.id === id ? { ...r, status: "approved" as const } : r);
       localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
+      saveLedgerRequestsToDb(updated);
       setLedgerRequests(updated);
       alert("অনুরোধটি অনুমোদিত হয়েছে। সদস্যকে হিসাব দেখার অধিকার প্রদান করা হলো।");
     }
@@ -726,6 +767,7 @@ export default function AdminPanel() {
     if (window.confirm("এই হিসাব দেখার অনুরোধটি বাতিল করতে চান?")) {
       const updated = ledgerRequests.map(r => r.id === id ? { ...r, status: "rejected" as const } : r);
       localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
+      saveLedgerRequestsToDb(updated);
       setLedgerRequests(updated);
       alert("অনুরোধটি বাতিল করা হয়েছে।");
     }
@@ -736,6 +778,7 @@ export default function AdminPanel() {
     if (window.confirm("এই অনুরোধটি স্থায়ীভাবে মুছে ফেলতে চান?")) {
       const updated = ledgerRequests.filter(r => r.id !== id);
       localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
+      saveLedgerRequestsToDb(updated);
       setLedgerRequests(updated);
       alert("অনুরোধটি মুছে ফেলা হয়েছে।");
     }
@@ -764,6 +807,7 @@ export default function AdminPanel() {
 
     const updated = [newReq, ...ledgerRequests];
     localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
+    saveLedgerRequestsToDb(updated);
     setLedgerRequests(updated);
 
     setShowAddLedgerRequestModal(false);
@@ -820,6 +864,7 @@ export default function AdminPanel() {
     const existing = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
     existing.push(newEntry);
     localStorage.setItem("customLedgerEntries", JSON.stringify(existing));
+    saveCustomLedgerToDb(existing);
 
     // If phone number matches a registered user, sync entry into user's personal profile donations
     const cleanInputPhone = ledgerPhone.trim().replace(/[^0-9]/g, "");
@@ -864,6 +909,7 @@ export default function AdminPanel() {
 
       if (matchedInAllUsers) {
         localStorage.setItem("allUsers", JSON.stringify(updatedAllUsers));
+        saveAllUsersToDb(updatedAllUsers);
       }
 
       // Also update currently logged-in user in userData if matches
@@ -919,6 +965,7 @@ export default function AdminPanel() {
       const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
       const updatedCustom = customEntries.filter((ce: any) => ce.id !== item.id && (!item.id || ce.transactionId !== item.id));
       localStorage.setItem("customLedgerEntries", JSON.stringify(updatedCustom));
+      saveCustomLedgerToDb(updatedCustom);
 
       // 2. Remove/update in allUsers if present
       const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
@@ -936,6 +983,7 @@ export default function AdminPanel() {
         return u;
       });
       localStorage.setItem("allUsers", JSON.stringify(updatedAllUsers));
+      saveAllUsersToDb(updatedAllUsers);
 
       loadAllData();
       alert("আয়/ব্যয় হিসাবের এন্ট্রিটি সফলভাবে মুছে দেওয়া হয়েছে।");
@@ -1011,6 +1059,7 @@ export default function AdminPanel() {
     }
 
     localStorage.setItem("customLedgerEntries", JSON.stringify(updatedCustom));
+    saveCustomLedgerToDb(updatedCustom);
 
     closeEditLedgerModal();
     loadAllData();
@@ -1054,6 +1103,7 @@ export default function AdminPanel() {
       }
 
       localStorage.setItem("allUsers", JSON.stringify(allUsersData));
+      saveAllUsersToDb(allUsersData);
 
       // Update status in pendingUsers list
       const updatedPendingUsers: PendingUser[] = pendingUsersList.map(u => {
@@ -1064,6 +1114,7 @@ export default function AdminPanel() {
       });
 
       localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
+      savePendingUsersToDb(updatedPendingUsers);
 
       alert(`"${targetUser.name}" সফলভাবে অনুমোদিত হয়েছেন। এখন সদস্য তালিকায় (সকল সদস্য) যুক্ত করা হয়েছে এবং তিনি লগইন করতে পারবেন।`);
       loadAllData();
@@ -1082,6 +1133,7 @@ export default function AdminPanel() {
       });
 
       localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
+      savePendingUsersToDb(updatedPendingUsers);
       alert(`"${targetUser.name}"-এর আবেদন বাতিল করা হয়েছে।`);
       loadAllData();
     }
@@ -1092,6 +1144,7 @@ export default function AdminPanel() {
     if (window.confirm("আপনি কি এই সদস্যের তথ্য মুছে ফেলতে চান?")) {
       const updatedUsers = allUsers.filter(user => user.phone !== userKey && user.email !== userKey && user.name !== userKey);
       localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
+      saveAllUsersToDb(updatedUsers);
       setAllUsers(updatedUsers);
       loadAllData();
       alert("সদস্য রিমুভ করা হয়েছে");
@@ -1150,6 +1203,7 @@ export default function AdminPanel() {
 
     currentUsers.push(newMember);
     localStorage.setItem("allUsers", JSON.stringify(currentUsers));
+    saveAllUsersToDb(currentUsers);
     
     // Reset form and close modal
     setNewUserName("");
@@ -1167,6 +1221,7 @@ export default function AdminPanel() {
   const deletePendingDonation = (index: number) => {
     const updatedPending = pendingDonations.filter((_, i) => i !== index);
     localStorage.setItem("pendingDonations", JSON.stringify(updatedPending));
+    savePendingDonationsToDb(updatedPending);
     setPendingDonations(updatedPending);
     setTotalStats({
       ...totalStats,
@@ -1252,6 +1307,7 @@ export default function AdminPanel() {
       }
       
       localStorage.setItem("allUsers", JSON.stringify(allUsersData));
+      saveAllUsersToDb(allUsersData);
       setAllUsers(allUsersData);
       
       // 2. Update currently logged-in user in userData if matching
@@ -1308,6 +1364,7 @@ export default function AdminPanel() {
           isCustom: true,
         });
         localStorage.setItem("customLedgerEntries", JSON.stringify(customEntries));
+        saveCustomLedgerToDb(customEntries);
       }
 
       // 4. Remove from pendingDonations
@@ -1335,6 +1392,7 @@ export default function AdminPanel() {
         const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
         const filteredCustom = customEntries.filter((ce: any) => ce.id !== ledgerEntryId && (!txId || ce.transactionId !== txId));
         localStorage.setItem("customLedgerEntries", JSON.stringify(filteredCustom));
+        saveCustomLedgerToDb(filteredCustom);
       }
 
       // 2. Update in allUsersData
@@ -1357,6 +1415,7 @@ export default function AdminPanel() {
         allUsersData[userIndex].donationCount = approvedDons.length;
 
         localStorage.setItem("allUsers", JSON.stringify(allUsersData));
+        saveAllUsersToDb(allUsersData);
         setAllUsers(allUsersData);
       }
       
@@ -1454,6 +1513,7 @@ export default function AdminPanel() {
     });
 
     localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
+    saveAllUsersToDb(updatedUsers);
     setAllUsers(updatedUsers);
 
     const savedUser = localStorage.getItem("userData");
@@ -1517,6 +1577,7 @@ export default function AdminPanel() {
     );
 
     localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
+    saveAllUsersToDb(updatedUsers);
     setAllUsers(updatedUsers);
     closeEditModal();
     alert("সদস্য তথ্য আপডেট করা হয়েছে");

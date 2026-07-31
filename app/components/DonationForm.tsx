@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { savePendingDonationsToDb, saveAllUsersToDb } from "@/lib/dbSync";
 
 export default function DonationForm() {
   const [amount, setAmount] = useState("");
@@ -114,6 +115,7 @@ export default function DonationForm() {
         allUsers.push(savedUserObj);
       }
       localStorage.setItem("allUsers", JSON.stringify(allUsers));
+      saveAllUsersToDb(allUsers);
       
       // Also add to pendingDonations for admin approval
       const pendingDonations = JSON.parse(localStorage.getItem("pendingDonations") || "[]");
@@ -130,6 +132,7 @@ export default function DonationForm() {
         status: "pending"
       });
       localStorage.setItem("pendingDonations", JSON.stringify(pendingDonations));
+      savePendingDonationsToDb(pendingDonations);
     } else {
       // Non-logged in user
       const donations = JSON.parse(localStorage.getItem("pendingDonations") || "[]");
@@ -147,6 +150,7 @@ export default function DonationForm() {
       });
       
       localStorage.setItem("pendingDonations", JSON.stringify(donations));
+      savePendingDonationsToDb(donations);
     }
     
     setSubmitSuccess(true);

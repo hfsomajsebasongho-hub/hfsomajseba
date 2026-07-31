@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { subscribeAllUsers, subscribeCustomLedger } from "@/lib/dbSync";
 
 interface Donor {
   name: string;
@@ -17,7 +18,7 @@ export default function Home() {
   const [totalDonors, setTotalDonors] = useState(0);
   const [selectedDonor, setSelectedDonor] = useState<Donor | null>(null);
 
-  useEffect(() => {
+  const calculateHomeStats = () => {
     // Load all approved donations from allUsers and custom ledger
     const allUsersData = JSON.parse(localStorage.getItem("allUsers") || "[]");
     const savedUserStr = localStorage.getItem("userData");
@@ -72,6 +73,22 @@ export default function Home() {
     setRecentDonors(donations.slice(0, 10));
     setTotalAmount(totalDonationAmount);
     setTotalDonors(donorCountSet.size);
+  };
+
+  useEffect(() => {
+    calculateHomeStats();
+
+    const unsub1 = subscribeAllUsers(() => {
+      calculateHomeStats();
+    });
+    const unsub2 = subscribeCustomLedger(() => {
+      calculateHomeStats();
+    });
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, []);
 
   return (

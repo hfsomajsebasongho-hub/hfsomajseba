@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import DonorCard from "../components/DonorCard";
+import { subscribeAllUsers } from "@/lib/dbSync";
 
 interface Donor {
   name: string;
@@ -24,7 +25,7 @@ export default function DonorsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [selectedDonor, setSelectedDonor] = useState<Donor | null>(null);
 
-  // Check login status
+  // Check login status & subscribe to Firestore
   useEffect(() => {
     const checkLoginStatus = () => {
       const savedLoginStatus = localStorage.getItem("isLoggedIn");
@@ -34,9 +35,12 @@ export default function DonorsPage() {
 
     checkLoginStatus();
 
+    const unsub = subscribeAllUsers(() => {});
+
     // Check login status when window gets focus
     window.addEventListener("focus", checkLoginStatus);
     return () => {
+      unsub();
       window.removeEventListener("focus", checkLoginStatus);
     };
   }, []);
