@@ -18,21 +18,28 @@ export default function Home() {
   const [totalDonors, setTotalDonors] = useState(0);
   const [selectedDonor, setSelectedDonor] = useState<Donor | null>(null);
 
-  const calculateHomeStats = () => {
-    // Load all approved donations from allUsers and custom ledger
-    const allUsersData = JSON.parse(localStorage.getItem("allUsers") || "[]");
-    const savedUserStr = localStorage.getItem("userData");
-    const savedUserObj = savedUserStr ? JSON.parse(savedUserStr) : null;
+  const [allUsersData, setAllUsersData] = useState<any[]>([]);
+  const [customEntriesData, setCustomEntriesData] = useState<any[]>([]);
+
+  useEffect(() => {
+    const unsubUsers = subscribeAllUsers((users) => {
+      setAllUsersData(users);
+    });
+    const unsubCustom = subscribeCustomLedger((entries) => {
+      setCustomEntriesData(entries);
+    });
+    return () => {
+      unsubUsers();
+      unsubCustom();
+    };
+  }, []);
+
+  useEffect(() => {
     let donations: Donor[] = [];
     let totalDonationAmount = 0;
     let donorCountSet = new Set<string>();
 
-    const usersToScan = [...allUsersData];
-    if (savedUserObj && !usersToScan.some(u => (u.phone && u.phone === savedUserObj.phone) || (u.email && u.email !== "-" && u.email === savedUserObj.email))) {
-      usersToScan.push(savedUserObj);
-    }
-
-    usersToScan.forEach((u: any) => {
+    allUsersData.forEach((u: any) => {
       if (u.donations && Array.isArray(u.donations)) {
         const approved = u.donations.filter((d: any) => d.status === "approved" || !d.status);
         approved.forEach((d: any) => {
@@ -48,9 +55,7 @@ export default function Home() {
       }
     });
 
-    // Also include custom income entries from ledger
-    const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
-    customEntries.forEach((ce: any) => {
+    customEntriesData.forEach((ce: any) => {
       if (ce.type === "income" || (ce.incomeAmount && ce.incomeAmount > 0)) {
         donations.push({
           name: ce.donorName || "দাতা",
@@ -63,7 +68,6 @@ export default function Home() {
       }
     });
 
-    // Sort by date (newest first) and take only 10
     donations.sort((a, b) => {
       const dateA = new Date(a.date);
       const dateB = new Date(b.date);
@@ -73,23 +77,7 @@ export default function Home() {
     setRecentDonors(donations.slice(0, 10));
     setTotalAmount(totalDonationAmount);
     setTotalDonors(donorCountSet.size);
-  };
-
-  useEffect(() => {
-    calculateHomeStats();
-
-    const unsub1 = subscribeAllUsers(() => {
-      calculateHomeStats();
-    });
-    const unsub2 = subscribeCustomLedger(() => {
-      calculateHomeStats();
-    });
-
-    return () => {
-      unsub1();
-      unsub2();
-    };
-  }, []);
+  }, [allUsersData, customEntriesData]);
 
   return (
     <div className="bg-gradient-to-br from-blue-800 via-blue-900 to-blue-950 text-white min-h-screen">

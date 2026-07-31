@@ -23,6 +23,7 @@ export default function DonorsPage() {
   const [topDonors, setTopDonors] = useState<Donor[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [rawUsers, setRawUsers] = useState<any[]>([]);
   const [selectedDonor, setSelectedDonor] = useState<Donor | null>(null);
 
   // Check login status & subscribe to Firestore
@@ -35,7 +36,9 @@ export default function DonorsPage() {
 
     checkLoginStatus();
 
-    const unsub = subscribeAllUsers(() => {});
+    const unsub = subscribeAllUsers((users) => {
+      setRawUsers(users);
+    });
 
     // Check login status when window gets focus
     window.addEventListener("focus", checkLoginStatus);
@@ -46,17 +49,12 @@ export default function DonorsPage() {
   }, []);
 
   useEffect(() => {
-    // Only load donors if user is logged in
     if (!isLoggedIn) return;
-    // Load all donations from localStorage
-    const savedUser = localStorage.getItem("userData");
+
     let allDonations: any[] = [];
     let totalDonationAmount = 0;
-    let uniqueDonorMap = new Map<string, { totalAmount: number; donationCount: number; date: string; isAnonymous: boolean; phone?: string; joinDate: string; bloodGroup?: string }>();
 
-    // Load all registered users from allUsers list
-    const allUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
-    allUsers.forEach((user: any) => {
+    rawUsers.forEach((user: any) => {
       allDonations.push({
         name: user.name,
         amount: user.totalDonation || 0,
@@ -70,94 +68,13 @@ export default function DonorsPage() {
       totalDonationAmount += user.totalDonation || 0;
     });
 
-    // Also check current logged in user (in case they're not in allUsers yet)
-    if (savedUser) {
-      const userData = JSON.parse(savedUser);
-      if (userData.name) {
-        // Check if user already exists in allDonations
-        const existsInList = allDonations.some((d: any) => d.phone === userData.phone || d.name === userData.name);
-        if (!existsInList) {
-          allDonations.push({
-            name: userData.name,
-            amount: userData.totalDonation || 0,
-            date: userData.joinDate || "",
-            isAnonymous: false,
-            phone: userData.phone || "",
-            joinDate: userData.joinDate || "",
-            bloodGroup: userData.bloodGroup || "",
-            donationCount: userData.donationCount || 0,
-          });
-          totalDonationAmount += userData.totalDonation || 0;
-        } else {
-          // Update existing user with latest data
-          const existingIndex = allDonations.findIndex((d: any) => d.phone === userData.phone || d.name === userData.name);
-          if (existingIndex !== -1) {
-            allDonations[existingIndex] = {
-              ...allDonations[existingIndex],
-              name: userData.name,
-              phone: userData.phone || "",
-              bloodGroup: userData.bloodGroup || "",
-              amount: userData.totalDonation || 0,
-              donationCount: userData.donationCount || 0,
-            };
-          }
-        }
-      }
-    }
-
-    // Group donations by donor name (only approved user donations and totalDonation stats)
-
-    // Group donations by donor name
-    allDonations.forEach((donation) => {
-      const key = donation.name;
-      if (uniqueDonorMap.has(key)) {
-        const existing = uniqueDonorMap.get(key)!;
-        existing.totalAmount += donation.amount;
-        existing.donationCount += 1;
-        // Update date to most recent
-        const existingDate = new Date(existing.date);
-        const newDate = new Date(donation.date);
-        if (newDate > existingDate) {
-          existing.date = donation.date;
-        }
-      } else {
-        uniqueDonorMap.set(key, {
-          totalAmount: donation.amount,
-          donationCount: 1,
-          date: donation.date,
-          isAnonymous: donation.isAnonymous,
-          phone: donation.phone,
-          joinDate: donation.joinDate,
-          bloodGroup: donation.bloodGroup,
-        });
-      }
-    });
-
-    // Convert map to donor array
-    const uniqueDonors: Donor[] = Array.from(uniqueDonorMap.entries()).map(([name, data]) => ({
-      name,
-      amount: data.totalAmount,
-      date: data.date,
-      isAnonymous: data.isAnonymous,
-      donationCount: data.donationCount,
-      phone: data.phone,
-      joinDate: data.joinDate,
-      bloodGroup: data.bloodGroup,
-    }));
-
-    // Sort by amount descending
-    uniqueDonors.sort((a, b) => (b.amount || 0) - (a.amount || 0));
-
-    // Get top donors
-    const topDonorsArr = uniqueDonors
-      .filter(d => !d.isAnonymous)
-      .slice(0, 5);
-
-    setAllDonors(uniqueDonors);
-    setTopDonors(topDonorsArr);
+    setAllDonors(allDonations);
     setTotalAmount(totalDonationAmount);
-    setTotalCount(uniqueDonors.length);
-  }, [isLoggedIn]);
+    setTotalCount(allDonations.length);
+
+    const sortedByAmount = [...allDonations].sort((a, b) => b.amount - a.amount);
+    setTopDonors(sortedByAmount.slice(0, 3));
+  }, [isLoggedIn, rawUsers]);
 
   const averageDonation = totalCount > 0 ? Math.round(totalAmount / totalCount) : 0;
 

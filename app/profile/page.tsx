@@ -11,6 +11,8 @@ import {
   subscribePendingUsers,
   subscribeAllUsers,
   subscribeLedgerRequests,
+  addLedgerRequestToDb,
+  addPendingUserToDb,
 } from "@/lib/dbSync";
 
 // User data type
@@ -109,13 +111,6 @@ export default function ProfilePage() {
       return;
     }
 
-    const requests = JSON.parse(localStorage.getItem("ledgerViewRequests") || "[]");
-    
-    // Find index of existing request if any
-    const existingIndex = requests.findIndex((r: any) => 
-      (r.phone && r.phone === userData.phone) || (r.email && r.email !== "-" && r.email === userData.email)
-    );
-
     const newReq = {
       id: "req-" + Date.now(),
       requesterName: userData.name,
@@ -123,17 +118,10 @@ export default function ProfilePage() {
       email: userData.email || "-",
       requestDate: new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' }),
       reason: "ইউজার প্রোফাইল থেকে আয়-ব্যয় বিবরণী দেখার অনুরোধ",
-      status: "pending",
+      status: "pending" as const,
     };
 
-    if (existingIndex !== -1) {
-      requests[existingIndex] = newReq;
-    } else {
-      requests.unshift(newReq);
-    }
-
-    localStorage.setItem("ledgerViewRequests", JSON.stringify(requests));
-    saveLedgerRequestsToDb(requests);
+    addLedgerRequestToDb(newReq);
     setUserLedgerRequest(newReq);
     alert("আপনার আয়-ব্যয় হিসাব দেখার অনুরোধটি এডমিন প্যানেলে সফলভাবে পাঠানো হয়েছে। এডমিন অনুমোদন করলে আপনি সরাসরি PDF রিপোর্ট ডাউনলোড করে দেখতে পারবেন।");
   };
@@ -657,10 +645,6 @@ export default function ProfilePage() {
       year: 'numeric' 
     });
     
-    // Add to pendingUsers list (awaiting admin approval)
-    const pendingUsers = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
-    const existingPendingIndex = pendingUsers.findIndex((u: any) => u.phone === regPhone || (userEmail !== "-" && u.email === userEmail));
-    
     const newPendingUser = {
       name: regName.trim(),
       email: userEmail,
@@ -671,13 +655,7 @@ export default function ProfilePage() {
       status: "pending" as const,
     };
 
-    if (existingPendingIndex === -1) {
-      pendingUsers.push(newPendingUser);
-    } else {
-      pendingUsers[existingPendingIndex] = newPendingUser;
-    }
-    localStorage.setItem("pendingUsers", JSON.stringify(pendingUsers));
-    savePendingUsersToDb(pendingUsers);
+    addPendingUserToDb(newPendingUser);
     
     // Show success message
     setRegSuccess(true);

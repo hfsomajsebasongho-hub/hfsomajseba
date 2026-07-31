@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { savePendingDonationsToDb, saveAllUsersToDb } from "@/lib/dbSync";
+import { addPendingDonationToDb, saveAllUsersToDb } from "@/lib/dbSync";
 
 export default function DonationForm() {
   const [amount, setAmount] = useState("");
@@ -117,9 +117,7 @@ export default function DonationForm() {
       localStorage.setItem("allUsers", JSON.stringify(allUsers));
       saveAllUsersToDb(allUsers);
       
-      // Also add to pendingDonations for admin approval
-      const pendingDonations = JSON.parse(localStorage.getItem("pendingDonations") || "[]");
-      pendingDonations.push({
+      addPendingDonationToDb({
         amount: donationAmount,
         date: banglaDate,
         method: paymentMethodName,
@@ -131,13 +129,8 @@ export default function DonationForm() {
         donorEmail: savedUserObj.email || "",
         status: "pending"
       });
-      localStorage.setItem("pendingDonations", JSON.stringify(pendingDonations));
-      savePendingDonationsToDb(pendingDonations);
     } else {
-      // Non-logged in user
-      const donations = JSON.parse(localStorage.getItem("pendingDonations") || "[]");
-      
-      donations.push({
+      addPendingDonationToDb({
         amount: donationAmount,
         date: banglaDate,
         method: paymentMethodName,
@@ -148,9 +141,6 @@ export default function DonationForm() {
         donorBloodGroup: donorBloodGroupVal,
         status: "pending"
       });
-      
-      localStorage.setItem("pendingDonations", JSON.stringify(donations));
-      savePendingDonationsToDb(donations);
     }
     
     setSubmitSuccess(true);

@@ -80,7 +80,7 @@ export interface LedgerRequest {
   status: "pending" | "approved" | "rejected";
 }
 
-// Initial seed data if Firestore collections are completely empty
+// Initial seed data ONLY if Firestore database collections are completely empty on first initialization
 const INITIAL_CUSTOM_ENTRIES: LedgerEntry[] = [
   {
     id: "init-1",
@@ -197,37 +197,32 @@ const INITIAL_LEDGER_REQUESTS: LedgerRequest[] = [
 ];
 
 // Helper to generate clean Firestore doc IDs from key values
-const makeDocId = (prefix: string, keyVal?: string) => {
+export const makeDocId = (prefix: string, keyVal?: string) => {
   if (!keyVal) return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const clean = keyVal.replace(/[^a-zA-Z0-9_\-]/g, "_");
   return `${prefix}_${clean}`;
 };
 
 // -------------------------------------------------------------
-// Real-time Subscriptions with fallback to localStorage
+// Real-time Subscriptions (Pure Firestore Cloud Engine)
+// NO localStorage dependencies for datasets
 // -------------------------------------------------------------
+
+let globalHasSeededAllUsers = false;
+let globalHasSeededCustomLedger = false;
+let globalHasSeededLedgerRequests = false;
 
 export const subscribeAllUsers = (onData: (users: UserData[]) => void) => {
   const colRef = collection(db, "allUsers");
 
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
-    const isSeeded = typeof window !== "undefined" && localStorage.getItem("hasSeeded_allUsers") === "true";
-    if (snapshot.empty && !isSeeded) {
-      if (typeof window !== "undefined") {
-        localStorage.setItem("hasSeeded_allUsers", "true");
-      }
-      const local = typeof window !== "undefined" ? localStorage.getItem("allUsers") : null;
-      let usersToSeed = INITIAL_USERS;
-      if (local) {
-        try {
-          const parsed = JSON.parse(local);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            usersToSeed = parsed;
-          }
-        } catch (e) {}
-      }
-      await saveAllUsersToDb(usersToSeed);
+    if (snapshot.empty && !globalHasSeededAllUsers) {
+      globalHasSeededAllUsers = true;
+      await saveAllUsersToDb(INITIAL_USERS);
       return;
+    }
+    if (!snapshot.empty) {
+      globalHasSeededAllUsers = true;
     }
 
     const list: UserData[] = snapshot.docs.map((docSnap) => ({
@@ -235,20 +230,10 @@ export const subscribeAllUsers = (onData: (users: UserData[]) => void) => {
       ...(docSnap.data() as Omit<UserData, "id">),
     }));
 
-    if (typeof window !== "undefined") {
-      localStorage.setItem("allUsers", JSON.stringify(list));
-      localStorage.setItem("hasSeeded_allUsers", "true");
-      localStorage.setItem("hasInitializedData", "true");
-    }
     onData(list);
   }, (err) => {
     console.warn("Firestore allUsers subscribe error:", err);
-    if (typeof window !== "undefined") {
-      const local = localStorage.getItem("allUsers");
-      if (local) {
-        try { onData(JSON.parse(local)); } catch (e) {}
-      }
-    }
+    onData([]);
   });
 
   return unsubscribe;
@@ -263,18 +248,10 @@ export const subscribePendingUsers = (onData: (users: PendingUser[]) => void) =>
       ...(docSnap.data() as Omit<PendingUser, "id">),
     }));
 
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pendingUsers", JSON.stringify(list));
-    }
     onData(list);
   }, (err) => {
     console.warn("Firestore pendingUsers subscribe error:", err);
-    if (typeof window !== "undefined") {
-      const local = localStorage.getItem("pendingUsers");
-      if (local) {
-        try { onData(JSON.parse(local)); } catch (e) {}
-      }
-    }
+    onData([]);
   });
 
   return unsubscribe;
@@ -289,18 +266,10 @@ export const subscribePendingDonations = (onData: (donations: PendingDonation[])
       ...(docSnap.data() as Omit<PendingDonation, "id">),
     }));
 
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pendingDonations", JSON.stringify(list));
-    }
     onData(list);
   }, (err) => {
     console.warn("Firestore pendingDonations subscribe error:", err);
-    if (typeof window !== "undefined") {
-      const local = localStorage.getItem("pendingDonations");
-      if (local) {
-        try { onData(JSON.parse(local)); } catch (e) {}
-      }
-    }
+    onData([]);
   });
 
   return unsubscribe;
@@ -310,23 +279,13 @@ export const subscribeCustomLedger = (onData: (entries: LedgerEntry[]) => void) 
   const colRef = collection(db, "customLedgerEntries");
 
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
-    const isSeeded = typeof window !== "undefined" && localStorage.getItem("hasSeeded_customLedgerEntries") === "true";
-    if (snapshot.empty && !isSeeded) {
-      if (typeof window !== "undefined") {
-        localStorage.setItem("hasSeeded_customLedgerEntries", "true");
-      }
-      const local = typeof window !== "undefined" ? localStorage.getItem("customLedgerEntries") : null;
-      let entriesToSeed = INITIAL_CUSTOM_ENTRIES;
-      if (local) {
-        try {
-          const parsed = JSON.parse(local);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            entriesToSeed = parsed;
-          }
-        } catch (e) {}
-      }
-      await saveCustomLedgerToDb(entriesToSeed);
+    if (snapshot.empty && !globalHasSeededCustomLedger) {
+      globalHasSeededCustomLedger = true;
+      await saveCustomLedgerToDb(INITIAL_CUSTOM_ENTRIES);
       return;
+    }
+    if (!snapshot.empty) {
+      globalHasSeededCustomLedger = true;
     }
 
     const list: LedgerEntry[] = snapshot.docs.map((docSnap) => ({
@@ -334,19 +293,10 @@ export const subscribeCustomLedger = (onData: (entries: LedgerEntry[]) => void) 
       ...(docSnap.data() as Omit<LedgerEntry, "id">),
     }));
 
-    if (typeof window !== "undefined") {
-      localStorage.setItem("customLedgerEntries", JSON.stringify(list));
-      localStorage.setItem("hasSeeded_customLedgerEntries", "true");
-    }
     onData(list);
   }, (err) => {
     console.warn("Firestore customLedgerEntries subscribe error:", err);
-    if (typeof window !== "undefined") {
-      const local = localStorage.getItem("customLedgerEntries");
-      if (local) {
-        try { onData(JSON.parse(local)); } catch (e) {}
-      }
-    }
+    onData([]);
   });
 
   return unsubscribe;
@@ -356,23 +306,13 @@ export const subscribeLedgerRequests = (onData: (requests: LedgerRequest[]) => v
   const colRef = collection(db, "ledgerViewRequests");
 
   const unsubscribe = onSnapshot(colRef, async (snapshot) => {
-    const isSeeded = typeof window !== "undefined" && localStorage.getItem("hasSeeded_ledgerViewRequests") === "true";
-    if (snapshot.empty && !isSeeded) {
-      if (typeof window !== "undefined") {
-        localStorage.setItem("hasSeeded_ledgerViewRequests", "true");
-      }
-      const local = typeof window !== "undefined" ? localStorage.getItem("ledgerViewRequests") : null;
-      let reqsToSeed = INITIAL_LEDGER_REQUESTS;
-      if (local) {
-        try {
-          const parsed = JSON.parse(local);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            reqsToSeed = parsed;
-          }
-        } catch (e) {}
-      }
-      await saveLedgerRequestsToDb(reqsToSeed);
+    if (snapshot.empty && !globalHasSeededLedgerRequests) {
+      globalHasSeededLedgerRequests = true;
+      await saveLedgerRequestsToDb(INITIAL_LEDGER_REQUESTS);
       return;
+    }
+    if (!snapshot.empty) {
+      globalHasSeededLedgerRequests = true;
     }
 
     const list: LedgerRequest[] = snapshot.docs.map((docSnap) => ({
@@ -380,19 +320,10 @@ export const subscribeLedgerRequests = (onData: (requests: LedgerRequest[]) => v
       ...(docSnap.data() as Omit<LedgerRequest, "id">),
     }));
 
-    if (typeof window !== "undefined") {
-      localStorage.setItem("ledgerViewRequests", JSON.stringify(list));
-      localStorage.setItem("hasSeeded_ledgerViewRequests", "true");
-    }
     onData(list);
   }, (err) => {
     console.warn("Firestore ledgerViewRequests subscribe error:", err);
-    if (typeof window !== "undefined") {
-      const local = localStorage.getItem("ledgerViewRequests");
-      if (local) {
-        try { onData(JSON.parse(local)); } catch (e) {}
-      }
-    }
+    onData([]);
   });
 
   return unsubscribe;
@@ -405,32 +336,21 @@ export const subscribeAdminAccounts = (onData: (accountsSecStr: string) => void)
     if (docSnap.exists()) {
       const data = docSnap.data();
       if (data && data.accountsSec) {
-        if (typeof window !== "undefined") {
-          localStorage.setItem("adminAccounts_sec", data.accountsSec);
-        }
         onData(data.accountsSec);
       }
     }
   }, (err) => {
     console.warn("Firestore adminAccounts subscribe error:", err);
-    if (typeof window !== "undefined") {
-      const local = localStorage.getItem("adminAccounts_sec");
-      if (local) onData(local);
-    }
   });
 
   return unsubscribe;
 };
 
 // -------------------------------------------------------------
-// Write / Update Mutations
+// Direct Firestore Single & Bulk Mutations
 // -------------------------------------------------------------
 
 export const saveAllUsersToDb = async (users: UserData[]) => {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("allUsers", JSON.stringify(users));
-    localStorage.setItem("hasSeeded_allUsers", "true");
-  }
   try {
     const activeDocIds = new Set<string>();
     for (const user of users) {
@@ -451,9 +371,6 @@ export const saveAllUsersToDb = async (users: UserData[]) => {
 };
 
 export const savePendingUsersToDb = async (pendingUsers: PendingUser[]) => {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("pendingUsers", JSON.stringify(pendingUsers));
-  }
   try {
     const activeDocIds = new Set<string>();
     for (const pUser of pendingUsers) {
@@ -474,9 +391,6 @@ export const savePendingUsersToDb = async (pendingUsers: PendingUser[]) => {
 };
 
 export const savePendingDonationsToDb = async (pendingDonations: PendingDonation[]) => {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("pendingDonations", JSON.stringify(pendingDonations));
-  }
   try {
     const activeDocIds = new Set<string>();
     for (const pDonation of pendingDonations) {
@@ -497,10 +411,6 @@ export const savePendingDonationsToDb = async (pendingDonations: PendingDonation
 };
 
 export const saveCustomLedgerToDb = async (entries: LedgerEntry[]) => {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("customLedgerEntries", JSON.stringify(entries));
-    localStorage.setItem("hasSeeded_customLedgerEntries", "true");
-  }
   try {
     const activeDocIds = new Set<string>();
     for (const entry of entries) {
@@ -521,10 +431,6 @@ export const saveCustomLedgerToDb = async (entries: LedgerEntry[]) => {
 };
 
 export const saveLedgerRequestsToDb = async (requests: LedgerRequest[]) => {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("ledgerViewRequests", JSON.stringify(requests));
-    localStorage.setItem("hasSeeded_ledgerViewRequests", "true");
-  }
   try {
     const activeDocIds = new Set<string>();
     for (const req of requests) {
@@ -545,12 +451,77 @@ export const saveLedgerRequestsToDb = async (requests: LedgerRequest[]) => {
 };
 
 export const saveAdminAccountsSecToDb = async (accountsSecStr: string) => {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("adminAccounts_sec", accountsSecStr);
-  }
   try {
     await setDoc(doc(db, "settings", "adminAccounts"), { accountsSec: accountsSecStr, updatedAt: Date.now() }, { merge: true });
   } catch (err) {
     console.warn("Error saving adminAccounts to Firestore:", err);
+  }
+};
+
+// Single document helpers
+export const addPendingDonationToDb = async (pDonation: PendingDonation) => {
+  try {
+    const docId = pDonation.id || makeDocId("pd", pDonation.transactionId || `${pDonation.donorPhone}_${Date.now()}`);
+    await setDoc(doc(db, "pendingDonations", docId), { ...pDonation, id: docId }, { merge: true });
+  } catch (err) {
+    console.warn("Error adding pendingDonation to Firestore:", err);
+  }
+};
+
+export const addPendingUserToDb = async (pUser: PendingUser) => {
+  try {
+    const docId = pUser.id || makeDocId("pu", pUser.phone || pUser.email || pUser.name);
+    await setDoc(doc(db, "pendingUsers", docId), { ...pUser, id: docId }, { merge: true });
+  } catch (err) {
+    console.warn("Error adding pendingUser to Firestore:", err);
+  }
+};
+
+export const addLedgerRequestToDb = async (req: LedgerRequest) => {
+  try {
+    const docId = req.id || makeDocId("req", req.phone || req.requesterName);
+    await setDoc(doc(db, "ledgerViewRequests", docId), { ...req, id: docId }, { merge: true });
+  } catch (err) {
+    console.warn("Error adding ledgerRequest to Firestore:", err);
+  }
+};
+
+export const deleteLedgerRequestFromDb = async (docId: string) => {
+  try {
+    await deleteDoc(doc(db, "ledgerViewRequests", docId));
+  } catch (err) {
+    console.warn("Error deleting ledgerRequest from Firestore:", err);
+  }
+};
+
+export const deletePendingDonationFromDb = async (docId: string) => {
+  try {
+    await deleteDoc(doc(db, "pendingDonations", docId));
+  } catch (err) {
+    console.warn("Error deleting pendingDonation from Firestore:", err);
+  }
+};
+
+export const deletePendingUserFromDb = async (docId: string) => {
+  try {
+    await deleteDoc(doc(db, "pendingUsers", docId));
+  } catch (err) {
+    console.warn("Error deleting pendingUser from Firestore:", err);
+  }
+};
+
+export const deleteCustomLedgerFromDb = async (docId: string) => {
+  try {
+    await deleteDoc(doc(db, "customLedgerEntries", docId));
+  } catch (err) {
+    console.warn("Error deleting customLedgerEntry from Firestore:", err);
+  }
+};
+
+export const deleteUserFromDb = async (docId: string) => {
+  try {
+    await deleteDoc(doc(db, "allUsers", docId));
+  } catch (err) {
+    console.warn("Error deleting user from Firestore:", err);
   }
 };

@@ -136,6 +136,7 @@ export default function AdminPanel() {
 
   // Donations filter state
   const [allDonations, setAllDonations] = useState<LedgerEntry[]>([]);
+  const [rawCustomLedger, setRawCustomLedger] = useState<LedgerEntry[]>([]);
   const [filterYear, setFilterYear] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
   const [filterDay, setFilterDay] = useState("");
@@ -237,27 +238,26 @@ export default function AdminPanel() {
         setIsAdminLoggedIn(true);
         const savedUser = localStorage.getItem("adminUsername") || "admin";
         setLoggedInAdminUser(savedUser);
-        loadAllData();
       }
     };
 
     checkAdminLoginStatus();
 
     // Setup Firestore real-time subscriptions across all browsers & devices
-    const unsubAllUsers = subscribeAllUsers(() => {
-      loadAllData();
+    const unsubAllUsers = subscribeAllUsers((data) => {
+      setAllUsers(data);
     });
-    const unsubPendingUsers = subscribePendingUsers(() => {
-      loadAllData();
+    const unsubPendingUsers = subscribePendingUsers((data) => {
+      setPendingUsers(data);
     });
-    const unsubPendingDonations = subscribePendingDonations(() => {
-      loadAllData();
+    const unsubPendingDonations = subscribePendingDonations((data) => {
+      setPendingDonations(data);
     });
-    const unsubCustomLedger = subscribeCustomLedger(() => {
-      loadAllData();
+    const unsubCustomLedger = subscribeCustomLedger((data) => {
+      setRawCustomLedger(data);
     });
-    const unsubLedgerRequests = subscribeLedgerRequests(() => {
-      loadAllData();
+    const unsubLedgerRequests = subscribeLedgerRequests((data) => {
+      setLedgerRequests(data);
     });
     const unsubAdminAccounts = subscribeAdminAccounts(() => {});
 
@@ -342,7 +342,6 @@ export default function AdminPanel() {
       localStorage.setItem("adminUsername", "admin");
       setAdminUsername("");
       setAdminPassword("");
-      loadAllData();
     } else {
       setLoginError("ইউজার নেম বা পাসওয়ার্ড ভুল।");
     }
@@ -459,80 +458,13 @@ export default function AdminPanel() {
     return isNaN(parsed) ? 0 : parsed;
   };
 
-  // Load all data from localStorage/Firestore
-  const loadAllData = () => {
-    // Load all users from allUsers
-    let allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
-    const pendingUsersList: PendingUser[] = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
-    const savedUserStr = localStorage.getItem("userData");
-    const savedUserObj = savedUserStr ? JSON.parse(savedUserStr) : null;
-    
-    // Auto-sync any approved pendingUsers into allUsersData if missing
-    let hasAddedApproved = false;
-    pendingUsersList.forEach((pUser: PendingUser) => {
-      if (pUser.status === "approved") {
-        const exists = allUsersData.some(
-          (u: UserData) => (pUser.phone && u.phone === pUser.phone) || (pUser.email && pUser.email !== "-" && u.email === pUser.email)
-        );
-        if (!exists) {
-          allUsersData.push({
-            name: pUser.name,
-            email: pUser.email || "-",
-            phone: pUser.phone,
-            address: pUser.address || "-",
-            bloodGroup: pUser.bloodGroup,
-            joinDate: pUser.registrationDate,
-            totalDonation: 0,
-            donationCount: 0,
-            donations: [],
-          });
-          hasAddedApproved = true;
-        }
-      }
-    });
-    if (hasAddedApproved) {
-      localStorage.setItem("allUsers", JSON.stringify(allUsersData));
-    }
-
-    // Deduplicate users safely and sync missing address
-    const uniqueUsers: UserData[] = Array.from(
-      new Map(
-        allUsersData.map((user: UserData, idx: number) => {
-          let userAddr = user.address && user.address !== "-" ? user.address : "";
-          if (!userAddr) {
-            const matchPending = pendingUsersList.find(p => (p.phone && p.phone === user.phone) || (p.email && p.email === user.email));
-            if (matchPending && matchPending.address) {
-              userAddr = matchPending.address;
-            } else if (savedUserObj && (savedUserObj.phone === user.phone || savedUserObj.email === user.email) && savedUserObj.address) {
-              userAddr = savedUserObj.address;
-            }
-          }
-          const updatedUser: UserData = { ...user, address: userAddr || "-" };
-          const key = (user.phone && user.phone !== "-") 
-            ? user.phone 
-            : ((user.email && user.email !== "-") 
-                ? user.email 
-                : `user-${idx}-${user.name}`);
-          return [key, updatedUser];
-        })
-      ).values()
-    ) as UserData[];
-    
-    setAllUsers(uniqueUsers);
-
-    // Load pending donations
-    const pendingDonationsData = JSON.parse(localStorage.getItem("pendingDonations") || "[]");
-    setPendingDonations(pendingDonationsData);
-
-    setPendingUsers(pendingUsersList);
-
-    // Collect ONLY APPROVED donations & ledger entries (Income & Expense)
+  // Recalculate combined ledger & stats whenever Firestore state updates
+  useEffect(() => {
     const combinedLedger: LedgerEntry[] = [];
     const processedIds = new Set<string>();
 
-    // 1. Custom entries (Custom Income & Expense added by admin or approved from pending)
-    const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
-    customEntries.forEach((ce: any) => {
+    // 1. Custom entries from Firestore
+    rawCustomLedger.forEach((ce: any) => {
       let cleanRemarks = ce.remarks || "-";
       if (typeof cleanRemarks === "string") {
         cleanRemarks = cleanRemarks.replace(/\s*\(TrxID:.*?\)/gi, "").trim();
@@ -558,13 +490,8 @@ export default function AdminPanel() {
       }
     });
 
-    // 2. Approved User donations from allUsers & userData
-    const allUsersToScan = [...uniqueUsers];
-    if (savedUserObj && !allUsersToScan.some(u => (u.phone && u.phone === savedUserObj.phone) || (u.email && u.email !== "-" && u.email === savedUserObj.email))) {
-      allUsersToScan.push(savedUserObj);
-    }
-
-    allUsersToScan.forEach((user: UserData) => {
+    // 2. Approved User donations from Firestore
+    allUsers.forEach((user: UserData) => {
       if (user.donations && Array.isArray(user.donations)) {
         user.donations.forEach((donation: DonationRecord) => {
           if (donation.status === "approved") {
@@ -592,7 +519,7 @@ export default function AdminPanel() {
       }
     });
 
-    // Sort by timestamp & date (newest entries always first at the top)
+    // Sort by timestamp & date (newest first)
     combinedLedger.sort((a, b) => {
       const timeA = a.timestamp || parseBengaliDateToTimestamp(a.date, a.id);
       const timeB = b.timestamp || parseBengaliDateToTimestamp(b.date, b.id);
@@ -601,7 +528,6 @@ export default function AdminPanel() {
 
     setAllDonations(combinedLedger);
 
-    // Calculate total stats from combined ledger
     const computedTotalIncome = combinedLedger
       .filter(item => item.type === "income")
       .reduce((sum, item) => sum + item.incomeAmount, 0);
@@ -610,22 +536,17 @@ export default function AdminPanel() {
       .filter(item => item.type === "income").length;
 
     setTotalStats({
-      totalUsers: uniqueUsers.length,
+      totalUsers: allUsers.length,
       totalAmount: computedTotalIncome,
       totalDonations: computedTotalDonations,
-      pendingDonations: pendingDonationsData.length,
+      pendingDonations: pendingDonations.length,
     });
-
-    // Load ledger view requests (হিসাব দেখার অনুরোধ)
-    const savedLedgerRequests = JSON.parse(localStorage.getItem("ledgerViewRequests") || "[]");
-    setLedgerRequests(savedLedgerRequests);
-  };
+  }, [allUsers, rawCustomLedger, pendingDonations]);
 
   // Approve Ledger Request
   const approveLedgerRequest = (id: string) => {
     if (window.confirm("এই হিসাব দেখার অনুরোধটি অনুমোদন করতে চান?")) {
       const updated = ledgerRequests.map(r => r.id === id ? { ...r, status: "approved" as const } : r);
-      localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
       saveLedgerRequestsToDb(updated);
       setLedgerRequests(updated);
       alert("অনুরোধটি অনুমোদিত হয়েছে। সদস্যকে হিসাব দেখার অধিকার প্রদান করা হলো।");
@@ -636,7 +557,6 @@ export default function AdminPanel() {
   const rejectLedgerRequest = (id: string) => {
     if (window.confirm("এই হিসাব দেখার অনুরোধটি বাতিল করতে চান?")) {
       const updated = ledgerRequests.map(r => r.id === id ? { ...r, status: "rejected" as const } : r);
-      localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
       saveLedgerRequestsToDb(updated);
       setLedgerRequests(updated);
       alert("অনুরোধটি বাতিল করা হয়েছে।");
@@ -647,7 +567,6 @@ export default function AdminPanel() {
   const deleteLedgerRequest = (id: string) => {
     if (window.confirm("এই অনুরোধটি স্থায়ীভাবে মুছে ফেলতে চান?")) {
       const updated = ledgerRequests.filter(r => r.id !== id);
-      localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
       saveLedgerRequestsToDb(updated);
       setLedgerRequests(updated);
       alert("অনুরোধটি মুছে ফেলা হয়েছে।");
@@ -676,7 +595,6 @@ export default function AdminPanel() {
     };
 
     const updated = [newReq, ...ledgerRequests];
-    localStorage.setItem("ledgerViewRequests", JSON.stringify(updated));
     saveLedgerRequestsToDb(updated);
     setLedgerRequests(updated);
 
@@ -717,7 +635,7 @@ export default function AdminPanel() {
       });
     }
 
-    const newEntry = {
+    const newEntry: LedgerEntry = {
       id: "custom-" + Date.now(),
       timestamp: Date.now(),
       date: dateStr,
@@ -731,18 +649,16 @@ export default function AdminPanel() {
       isCustom: true,
     };
 
-    const existing = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
-    existing.push(newEntry);
-    localStorage.setItem("customLedgerEntries", JSON.stringify(existing));
-    saveCustomLedgerToDb(existing);
+    const updatedCustom = [newEntry, ...rawCustomLedger];
+    setRawCustomLedger(updatedCustom);
+    saveCustomLedgerToDb(updatedCustom);
 
     // If phone number matches a registered user, sync entry into user's personal profile donations
     const cleanInputPhone = ledgerPhone.trim().replace(/[^0-9]/g, "");
     if (cleanInputPhone) {
-      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
       let matchedInAllUsers = false;
 
-      const updatedAllUsers = allUsersData.map((u: UserData) => {
+      const updatedAllUsers = allUsers.map((u: UserData) => {
         const uPhoneClean = (u.phone || "").replace(/[^0-9]/g, "");
         if (uPhoneClean && uPhoneClean === cleanInputPhone) {
           matchedInAllUsers = true;
@@ -778,42 +694,8 @@ export default function AdminPanel() {
       });
 
       if (matchedInAllUsers) {
-        localStorage.setItem("allUsers", JSON.stringify(updatedAllUsers));
+        setAllUsers(updatedAllUsers);
         saveAllUsersToDb(updatedAllUsers);
-      }
-
-      // Also update currently logged-in user in userData if matches
-      const savedUserStr = localStorage.getItem("userData");
-      if (savedUserStr) {
-        const savedUser = JSON.parse(savedUserStr);
-        const savedPhoneClean = (savedUser.phone || "").replace(/[^0-9]/g, "");
-        if (savedPhoneClean && savedPhoneClean === cleanInputPhone) {
-          const userDons = savedUser.donations ? [...savedUser.donations] : [];
-          const exists = userDons.some((d: any) => d.transactionId === newEntry.id);
-          if (!exists) {
-            userDons.push({
-              amount: amountNum,
-              date: dateStr,
-              method: ledgerMethod,
-              transactionId: newEntry.id,
-              senderPhone: ledgerPhone.trim(),
-              status: "approved",
-              receipt: {
-                donorName: savedUser.name,
-                donorPhone: savedUser.phone,
-                donorAddress: savedUser.address || "",
-                donorBloodGroup: savedUser.bloodGroup || "",
-                remarks: ledgerRemarks.trim() || (ledgerType === "income" ? "ম্যানুয়াল আয়" : "ম্যানুয়াল ব্যয়"),
-                type: ledgerType
-              }
-            });
-          }
-          const approvedDons = userDons.filter((d: any) => d.status === "approved");
-          savedUser.donations = userDons;
-          savedUser.totalDonation = approvedDons.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
-          savedUser.donationCount = approvedDons.length;
-          localStorage.setItem("userData", JSON.stringify(savedUser));
-        }
       }
     }
 
@@ -823,7 +705,6 @@ export default function AdminPanel() {
     setLedgerAmount("");
     setLedgerDate("");
     setLedgerRemarks("");
-    loadAllData();
     alert("আয়/ব্যয় হিসাব এন্ট্রি সফলভাবে সংরক্ষণ করা হয়েছে");
   };
 
@@ -831,15 +712,13 @@ export default function AdminPanel() {
   const deleteLedgerItem = (item: LedgerEntry) => {
     if (!item.id) return;
     if (window.confirm(`আপনি কি "${item.donorName}"-এর এই হিসাবের এন্ট্রিটি মুছে ফেলতে চান?`)) {
-      // 1. Remove from customLedgerEntries if present
-      const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
-      const updatedCustom = customEntries.filter((ce: any) => ce.id !== item.id && (!item.id || ce.transactionId !== item.id));
-      localStorage.setItem("customLedgerEntries", JSON.stringify(updatedCustom));
+      // 1. Remove from rawCustomLedger
+      const updatedCustom = rawCustomLedger.filter((ce: any) => ce.id !== item.id && (!item.id || ce.transactionId !== item.id));
+      setRawCustomLedger(updatedCustom);
       saveCustomLedgerToDb(updatedCustom);
 
-      // 2. Remove/update in allUsers if present
-      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
-      let updatedAllUsers = allUsersData.map((u: UserData) => {
+      // 2. Remove/update in allUsers
+      let updatedAllUsers = allUsers.map((u: UserData) => {
         if (u.donations && Array.isArray(u.donations)) {
           const filteredDons = u.donations.filter((d: any) => d.transactionId !== item.id);
           const approvedDons = filteredDons.filter((d: any) => d.status === "approved");
@@ -852,10 +731,9 @@ export default function AdminPanel() {
         }
         return u;
       });
-      localStorage.setItem("allUsers", JSON.stringify(updatedAllUsers));
+      setAllUsers(updatedAllUsers);
       saveAllUsersToDb(updatedAllUsers);
 
-      loadAllData();
       alert("আয়/ব্যয় হিসাবের এন্ট্রিটি সফলভাবে মুছে দেওয়া হয়েছে।");
     }
   };
@@ -890,11 +768,9 @@ export default function AdminPanel() {
     }
 
     const amountNum = Number(editLedgerAmount);
-
-    const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
     let foundInCustom = false;
 
-    const updatedCustom = customEntries.map((ce: any) => {
+    const updatedCustom = rawCustomLedger.map((ce: any) => {
       if (ce.id === editingLedgerItem.id || (ce.transactionId && ce.transactionId === editingLedgerItem.id)) {
         foundInCustom = true;
         return {
@@ -928,20 +804,16 @@ export default function AdminPanel() {
       });
     }
 
-    localStorage.setItem("customLedgerEntries", JSON.stringify(updatedCustom));
+    setRawCustomLedger(updatedCustom);
     saveCustomLedgerToDb(updatedCustom);
 
     closeEditLedgerModal();
-    loadAllData();
     alert("আয়/ব্যয় হিসাব এন্ট্রি সফলভাবে আপডেট করা হয়েছে");
   };
 
   // Approve pending user
   const approvePendingUser = (targetUser: PendingUser) => {
     if (window.confirm(`"${targetUser.name}"-কে অনুমোদন করতে চান?`)) {
-      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
-      const pendingUsersList: PendingUser[] = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
-      
       const approvedUser: UserData = {
         name: targetUser.name,
         email: targetUser.email || "-",
@@ -954,58 +826,54 @@ export default function AdminPanel() {
         donations: [],
       };
 
-      // Check if user already exists in allUsers (by phone or email)
-      const existingIdx = allUsersData.findIndex(
+      const existingIdx = allUsers.findIndex(
         u => (targetUser.phone && u.phone === targetUser.phone) ||
              (targetUser.email && targetUser.email !== "-" && u.email === targetUser.email)
       );
 
+      let updatedAllUsers = [...allUsers];
       if (existingIdx !== -1) {
-        allUsersData[existingIdx] = {
-          ...allUsersData[existingIdx],
+        updatedAllUsers[existingIdx] = {
+          ...updatedAllUsers[existingIdx],
           ...approvedUser,
-          totalDonation: allUsersData[existingIdx].totalDonation || 0,
-          donationCount: allUsersData[existingIdx].donationCount || 0,
-          donations: allUsersData[existingIdx].donations || [],
+          totalDonation: updatedAllUsers[existingIdx].totalDonation || 0,
+          donationCount: updatedAllUsers[existingIdx].donationCount || 0,
+          donations: updatedAllUsers[existingIdx].donations || [],
         };
       } else {
-        allUsersData.push(approvedUser);
+        updatedAllUsers.push(approvedUser);
       }
 
-      localStorage.setItem("allUsers", JSON.stringify(allUsersData));
-      saveAllUsersToDb(allUsersData);
+      setAllUsers(updatedAllUsers);
+      saveAllUsersToDb(updatedAllUsers);
 
-      // Update status in pendingUsers list
-      const updatedPendingUsers: PendingUser[] = pendingUsersList.map(u => {
+      const updatedPendingUsers: PendingUser[] = pendingUsers.map(u => {
         const isMatch = (targetUser.phone && u.phone === targetUser.phone) ||
                         (targetUser.email && targetUser.email !== "-" && u.email === targetUser.email) ||
                         (u.name === targetUser.name && u.registrationDate === targetUser.registrationDate);
         return isMatch ? { ...u, status: "approved" as const } : u;
       });
 
-      localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
+      setPendingUsers(updatedPendingUsers);
       savePendingUsersToDb(updatedPendingUsers);
 
       alert(`"${targetUser.name}" সফলভাবে অনুমোদিত হয়েছেন। এখন সদস্য তালিকায় (সকল সদস্য) যুক্ত করা হয়েছে এবং তিনি লগইন করতে পারবেন।`);
-      loadAllData();
     }
   };
 
   // Reject pending user
   const rejectPendingUser = (targetUser: PendingUser) => {
     if (window.confirm(`"${targetUser.name}"-এর আবেদন বাতিল করতে চান?`)) {
-      const pendingUsersList: PendingUser[] = JSON.parse(localStorage.getItem("pendingUsers") || "[]");
-      const updatedPendingUsers: PendingUser[] = pendingUsersList.map(u => {
+      const updatedPendingUsers: PendingUser[] = pendingUsers.map(u => {
         const isMatch = (targetUser.phone && u.phone === targetUser.phone) ||
                         (targetUser.email && targetUser.email !== "-" && u.email === targetUser.email) ||
                         (u.name === targetUser.name && u.registrationDate === targetUser.registrationDate);
         return isMatch ? { ...u, status: "rejected" as const } : u;
       });
 
-      localStorage.setItem("pendingUsers", JSON.stringify(updatedPendingUsers));
+      setPendingUsers(updatedPendingUsers);
       savePendingUsersToDb(updatedPendingUsers);
       alert(`"${targetUser.name}"-এর আবেদন বাতিল করা হয়েছে।`);
-      loadAllData();
     }
   };
 
@@ -1013,10 +881,8 @@ export default function AdminPanel() {
   const deleteUser = (userKey: string) => {
     if (window.confirm("আপনি কি এই সদস্যের তথ্য মুছে ফেলতে চান?")) {
       const updatedUsers = allUsers.filter(user => user.phone !== userKey && user.email !== userKey && user.name !== userKey);
-      localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
-      saveAllUsersToDb(updatedUsers);
       setAllUsers(updatedUsers);
-      loadAllData();
+      saveAllUsersToDb(updatedUsers);
       alert("সদস্য রিমুভ করা হয়েছে");
     }
   };
@@ -1035,10 +901,7 @@ export default function AdminPanel() {
       return;
     }
 
-    const currentUsers: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
-    
-    // Check if phone already exists
-    const exists = currentUsers.some(
+    const exists = allUsers.some(
       u => u.phone && u.phone !== "-" && u.phone === newUserPhone.trim()
     );
 
@@ -1071,11 +934,10 @@ export default function AdminPanel() {
       donations: []
     };
 
-    currentUsers.push(newMember);
-    localStorage.setItem("allUsers", JSON.stringify(currentUsers));
-    saveAllUsersToDb(currentUsers);
+    const updatedUsers = [...allUsers, newMember];
+    setAllUsers(updatedUsers);
+    saveAllUsersToDb(updatedUsers);
     
-    // Reset form and close modal
     setNewUserName("");
     setNewUserPhone("");
     setNewUserAddress("");
@@ -1083,20 +945,14 @@ export default function AdminPanel() {
     setNewUserJoinDate("");
     setShowAddUserModal(false);
 
-    loadAllData();
     alert("নতুন সদস্য ম্যানুয়ালি সফলভাবে যুক্ত করা হয়েছে!");
   };
 
   // Delete pending donation
   const deletePendingDonation = (index: number) => {
     const updatedPending = pendingDonations.filter((_, i) => i !== index);
-    localStorage.setItem("pendingDonations", JSON.stringify(updatedPending));
-    savePendingDonationsToDb(updatedPending);
     setPendingDonations(updatedPending);
-    setTotalStats({
-      ...totalStats,
-      pendingDonations: updatedPending.length,
-    });
+    savePendingDonationsToDb(updatedPending);
   };
 
   // Approve pending donation
@@ -1120,28 +976,28 @@ export default function AdminPanel() {
       const txId = donation.transactionId || `tx-${Date.now()}`;
       const ledgerEntryId = `ledger-appr-${txId}`;
 
-      // 1. Update in allUsersData
-      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
-      const userIndex = allUsersData.findIndex((u: UserData) => 
+      // 1. Update in allUsers
+      let updatedAllUsers = [...allUsers];
+      const userIndex = updatedAllUsers.findIndex((u: UserData) => 
         (donation.donorPhone && donation.donorPhone !== "-" && u.phone === donation.donorPhone) ||
         (donation.donorName && donation.donorName !== "অজানা" && donation.donorName !== "বেনামী" && u.name === donation.donorName)
       );
       
       if (userIndex !== -1) {
-        if (!allUsersData[userIndex].donations) {
-          allUsersData[userIndex].donations = [];
+        if (!updatedAllUsers[userIndex].donations) {
+          updatedAllUsers[userIndex].donations = [];
         }
 
-        const existingDonationIndex = allUsersData[userIndex].donations!.findIndex((d: any) => 
+        const existingDonationIndex = updatedAllUsers[userIndex].donations!.findIndex((d: any) => 
           (d.transactionId && donation.transactionId && d.transactionId === donation.transactionId) ||
           (Number(d.amount) === donationAmount && d.date === donation.date && d.status === "pending")
         );
 
         if (existingDonationIndex !== -1) {
-          allUsersData[userIndex].donations![existingDonationIndex].status = "approved";
-          allUsersData[userIndex].donations![existingDonationIndex].receipt = receipt;
+          updatedAllUsers[userIndex].donations![existingDonationIndex].status = "approved";
+          updatedAllUsers[userIndex].donations![existingDonationIndex].receipt = receipt;
         } else {
-          allUsersData[userIndex].donations!.push({
+          updatedAllUsers[userIndex].donations!.push({
             amount: donationAmount,
             date: donation.date,
             method: donation.method,
@@ -1152,11 +1008,11 @@ export default function AdminPanel() {
           });
         }
 
-        const approvedDons = allUsersData[userIndex].donations!.filter(d => d.status === "approved");
-        allUsersData[userIndex].totalDonation = approvedDons.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
-        allUsersData[userIndex].donationCount = approvedDons.length;
+        const approvedDons = updatedAllUsers[userIndex].donations!.filter(d => d.status === "approved");
+        updatedAllUsers[userIndex].totalDonation = approvedDons.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+        updatedAllUsers[userIndex].donationCount = approvedDons.length;
       } else {
-        allUsersData.push({
+        updatedAllUsers.push({
           name: donation.donorName || "অনলাইন দাতা",
           email: donation.donorEmail || "",
           phone: donation.donorPhone || donation.senderPhone || "-",
@@ -1176,50 +1032,13 @@ export default function AdminPanel() {
         });
       }
       
-      localStorage.setItem("allUsers", JSON.stringify(allUsersData));
-      saveAllUsersToDb(allUsersData);
-      setAllUsers(allUsersData);
-      
-      // 2. Update currently logged-in user in userData if matching
-      const savedUser = localStorage.getItem("userData");
-      if (savedUser) {
-        const userData = JSON.parse(savedUser);
-        if (
-          (donation.donorPhone && donation.donorPhone !== "-" && userData.phone === donation.donorPhone) ||
-          (donation.donorName && donation.donorName !== "অজানা" && donation.donorName !== "বেনামী" && userData.name === donation.donorName)
-        ) {
-          if (!userData.donations) userData.donations = [];
-          const donationIndex = userData.donations.findIndex((d: any) => 
-            (d.transactionId && donation.transactionId && d.transactionId === donation.transactionId) ||
-            (Number(d.amount) === donationAmount && d.date === donation.date && d.status === "pending")
-          );
-          if (donationIndex !== -1) {
-            userData.donations[donationIndex].status = "approved";
-            userData.donations[donationIndex].receipt = receipt;
-          } else {
-            userData.donations.push({
-              amount: donationAmount,
-              date: donation.date,
-              method: donation.method,
-              transactionId: txId,
-              senderPhone: donation.senderPhone,
-              status: "approved",
-              receipt: receipt,
-            });
-          }
+      setAllUsers(updatedAllUsers);
+      saveAllUsersToDb(updatedAllUsers);
 
-          const userApprovedDons = userData.donations.filter((d: any) => d.status === "approved");
-          userData.totalDonation = userApprovedDons.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
-          userData.donationCount = userApprovedDons.length;
-          localStorage.setItem("userData", JSON.stringify(userData));
-        }
-      }
-      
-      // 3. Save entry directly to customLedgerEntries to guarantee it appears in Admin Ledger & Total Calculations
-      const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
-      const existsInCustom = customEntries.some((ce: any) => ce.id === ledgerEntryId || (ce.transactionId && ce.transactionId === txId));
+      // 2. Save entry to rawCustomLedger
+      const existsInCustom = rawCustomLedger.some((ce: any) => ce.id === ledgerEntryId || (ce.transactionId && ce.transactionId === txId));
       if (!existsInCustom) {
-        customEntries.push({
+        const updatedCustom = [{
           id: ledgerEntryId,
           transactionId: txId,
           timestamp: Date.now(),
@@ -1227,21 +1046,19 @@ export default function AdminPanel() {
           donorName: donation.donorName || "অনলাইন দাতা",
           phone: donation.donorPhone || donation.senderPhone || "-",
           method: donation.method || "অনলাইন",
-          type: "income",
+          type: "income" as const,
           incomeAmount: donationAmount,
           expenseAmount: 0,
           remarks: "অনুমোদিত দান",
           isCustom: true,
-        });
-        localStorage.setItem("customLedgerEntries", JSON.stringify(customEntries));
-        saveCustomLedgerToDb(customEntries);
+        }, ...rawCustomLedger];
+
+        setRawCustomLedger(updatedCustom);
+        saveCustomLedgerToDb(updatedCustom);
       }
 
-      // 4. Remove from pendingDonations
+      // 3. Remove from pendingDonations
       deletePendingDonation(index);
-      
-      // 5. Reload all data and stats immediately
-      loadAllData();
       
       alert("দানটি সফলভাবে অনুমোদিত হয়েছে এবং 'দানের হিসাব (লেজার)'-এ অটোমেটিক যুক্ত হয়েছে।");
     }
@@ -1257,67 +1074,43 @@ export default function AdminPanel() {
       const txId = donation.transactionId || "";
       const ledgerEntryId = `ledger-appr-${txId}`;
 
-      // 1. Remove from customLedgerEntries if present
+      // 1. Remove from rawCustomLedger if present
       if (txId || ledgerEntryId) {
-        const customEntries = JSON.parse(localStorage.getItem("customLedgerEntries") || "[]");
-        const filteredCustom = customEntries.filter((ce: any) => ce.id !== ledgerEntryId && (!txId || ce.transactionId !== txId));
-        localStorage.setItem("customLedgerEntries", JSON.stringify(filteredCustom));
+        const filteredCustom = rawCustomLedger.filter((ce: any) => ce.id !== ledgerEntryId && (!txId || ce.transactionId !== txId));
+        setRawCustomLedger(filteredCustom);
         saveCustomLedgerToDb(filteredCustom);
       }
 
-      // 2. Update in allUsersData
-      const allUsersData: UserData[] = JSON.parse(localStorage.getItem("allUsers") || "[]");
-      const userIndex = allUsersData.findIndex((u: UserData) => 
-        (donation.donorPhone && donation.donorPhone !== "-" && u.phone === donation.donorPhone) ||
-        (donation.donorName && donation.donorName !== "অজানা" && donation.donorName !== "বেনামী" && u.name === donation.donorName)
-      );
-
-      if (userIndex !== -1 && allUsersData[userIndex].donations) {
-        const donationIndex = allUsersData[userIndex].donations!.findIndex((d: any) => 
-          (d.transactionId && txId && d.transactionId === txId) ||
-          (Number(d.amount) === donationAmount && d.date === donation.date && d.status === "pending")
-        );
-        if (donationIndex !== -1) {
-          allUsersData[userIndex].donations![donationIndex].status = "rejected";
-        }
-        const approvedDons = allUsersData[userIndex].donations!.filter(d => d.status === "approved");
-        allUsersData[userIndex].totalDonation = approvedDons.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
-        allUsersData[userIndex].donationCount = approvedDons.length;
-
-        localStorage.setItem("allUsers", JSON.stringify(allUsersData));
-        saveAllUsersToDb(allUsersData);
-        setAllUsers(allUsersData);
-      }
-      
-      // 3. Update currently logged-in user if matches
-      const savedUser = localStorage.getItem("userData");
-      if (savedUser) {
-        const userData = JSON.parse(savedUser);
+      // 2. Update in allUsers
+      let updatedAllUsers = allUsers.map((u: UserData) => {
         if (
-          (donation.donorPhone && donation.donorPhone !== "-" && userData.phone === donation.donorPhone) ||
-          (donation.donorName && donation.donorName !== "অজানা" && donation.donorName !== "বেনামী" && userData.name === donation.donorName)
+          (donation.donorPhone && donation.donorPhone !== "-" && u.phone === donation.donorPhone) ||
+          (donation.donorName && donation.donorName !== "অজানা" && donation.donorName !== "বেনামী" && u.name === donation.donorName)
         ) {
-          if (userData.donations && Array.isArray(userData.donations)) {
-            const donationIndex = userData.donations.findIndex((d: any) => 
+          if (u.donations) {
+            const donationIndex = u.donations.findIndex((d: any) => 
               (d.transactionId && txId && d.transactionId === txId) ||
               (Number(d.amount) === donationAmount && d.date === donation.date && d.status === "pending")
             );
             if (donationIndex !== -1) {
-              userData.donations[donationIndex].status = "rejected";
+              u.donations[donationIndex].status = "rejected";
             }
-            const userApprovedDons = userData.donations.filter((d: any) => d.status === "approved");
-            userData.totalDonation = userApprovedDons.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
-            userData.donationCount = userApprovedDons.length;
-            localStorage.setItem("userData", JSON.stringify(userData));
+            const approvedDons = u.donations.filter(d => d.status === "approved");
+            return {
+              ...u,
+              totalDonation: approvedDons.reduce((sum, d) => sum + (Number(d.amount) || 0), 0),
+              donationCount: approvedDons.length,
+            };
           }
         }
-      }
-      
-      // 4. Remove from pendingDonations
-      deletePendingDonation(index);
+        return u;
+      });
 
-      // 5. Reload all data and stats immediately
-      loadAllData();
+      setAllUsers(updatedAllUsers);
+      saveAllUsersToDb(updatedAllUsers);
+
+      // 3. Remove from pendingDonations
+      deletePendingDonation(index);
 
       alert("দানটি বাতিল করা হয়েছে এবং এটি দানের হিসাবে যুক্ত হয়নি।");
     }
@@ -1382,23 +1175,10 @@ export default function AdminPanel() {
       return user;
     });
 
-    localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
     saveAllUsersToDb(updatedUsers);
     setAllUsers(updatedUsers);
 
-    const savedUser = localStorage.getItem("userData");
-    if (savedUser) {
-      const userData = JSON.parse(savedUser);
-      if (userData.phone === manualDonationUser.phone || userData.name === manualDonationUser.name) {
-        userData.donations = [newDonationObj, ...(userData.donations || [])];
-        userData.totalDonation = (userData.totalDonation || 0) + amount;
-        userData.donationCount = (userData.donationCount || 0) + 1;
-        localStorage.setItem("userData", JSON.stringify(userData));
-      }
-    }
-
     closeManualDonationModal();
-    loadAllData();
     alert("ম্যানুয়াল দান সংরক্ষণ করা হয়েছে এবং 'দানের হিসাব'-এ যোগ হয়েছে");
   };
 
@@ -1446,7 +1226,6 @@ export default function AdminPanel() {
         : user
     );
 
-    localStorage.setItem("allUsers", JSON.stringify(updatedUsers));
     saveAllUsersToDb(updatedUsers);
     setAllUsers(updatedUsers);
     closeEditModal();
@@ -1456,11 +1235,12 @@ export default function AdminPanel() {
   // Clear all data
   const clearAllData = () => {
     if (window.confirm("সমস্ত ডেটা মুছে দিতে চান? এটি পূর্বাবাস করা যাবে না।")) {
-      localStorage.removeItem("allUsers");
-      localStorage.removeItem("pendingDonations");
-      localStorage.removeItem("userData");
+      saveAllUsersToDb([]);
+      savePendingDonationsToDb([]);
+      saveCustomLedgerToDb([]);
       setAllUsers([]);
       setPendingDonations([]);
+      setRawCustomLedger([]);
       setTotalStats({
         totalUsers: 0,
         totalAmount: 0,
@@ -1766,9 +1546,8 @@ export default function AdminPanel() {
   // Clear all registered users / members
   const clearAllUsersData = () => {
     if (window.confirm("আপনি কি নিশ্চিত যে সকল সদস্যের ডাটা রিমুভ করতে চান? এটি পূর্বাবস্থায় ফেরানো যাবে না।")) {
-      localStorage.setItem("allUsers", "[]");
+      saveAllUsersToDb([]);
       setAllUsers([]);
-      loadAllData();
       alert("সকল সদস্যের এন্ট্রি মুছে দেওয়া হয়েছে");
     }
   };
@@ -1924,7 +1703,6 @@ export default function AdminPanel() {
             <button
               onClick={() => {
                 setActiveTab("all-donations");
-                setTimeout(() => loadAllData(), 50);
               }}
               className={`flex-1 py-4 px-6 font-bold text-center transition-colors ${
                 activeTab === "all-donations"
